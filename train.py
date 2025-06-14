@@ -28,6 +28,10 @@ if __name__ == "__main__":
                         help='path to TokyoTimeMachine dataset and csv files')
     parser.add_argument('--metadata-path', type=str, default='./data/',
                         help='path to the CSV files')
+    parser.add_argument('--csv-path-train', type=str, default=None,
+                        help='path to the train CSV files (overrides metadata-path)')
+    parser.add_argument('--csv-path-test', type=str, default=None,
+                        help='path to the test CSV files (overrides metadata-path)')
     parser.add_argument('--model', type=str, default='dgc',
                         help='Model to use', choices=['dgc', 'dgcm'])
     parser.add_argument('--snapshots', type=str, default='./snapshots')
@@ -79,19 +83,29 @@ if __name__ == "__main__":
     weights_loss_coeffs = [1, 1, 1, 1, 1]
     weights_loss_feat = [1, 1, 1, 1]
 
+    csv_file_train = osp.join(args.metadata_path,
+                                            'csv',
+                                            'homo_aff_tps_train.csv')
+    csv_file_test = csv_file=osp.join(args.metadata_path,
+                                            'csv',
+                                            'homo_aff_tps_test.csv')
+    if args.csv_path_train is not None:
+        print("overriding default csv train and tests")
+        csv_file_train = args.csv_path_train
+        if args.csv_path_test is not None:
+            csv_file_test = args.csv_path_test
+        else:
+            raise Exception("Train csv path is provided but test is not")
+
     train_dataset = \
         HomoAffTpsDataset(image_path=args.image_data_path,
-                          csv_file=osp.join(args.metadata_path,
-                                            'csv',
-                                            'homo_aff_tps_train.csv'),
+                          csv_file=csv_file_train,
                           transforms=dataset_transforms,
                           pyramid_param=pyramid_param)
 
     val_dataset = \
         HomoAffTpsDataset(image_path=args.image_data_path,
-                          csv_file=osp.join(args.metadata_path,
-                                            'csv',
-                                            'homo_aff_tps_test.csv'),
+                          csv_file=csv_file_test,
                           transforms=dataset_transforms,
                           pyramid_param=pyramid_param)
 
