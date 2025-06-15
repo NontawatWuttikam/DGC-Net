@@ -6,24 +6,127 @@ import os
 from os import path as osp
 from termcolor import colored
 import pickle
-
+import yaml
+from pathlib import Path
+from model.net import DGCNet
+import sys
+sys.path.insert(0, "/home/boat/proxyISP/ProxyOpt/")
+sys.path.insert(0, "/home/boat/proxyISP/")
+sys.path.insert(0, "/home/boat/proxyISP/fast-openISP/")
+sys.path.insert(0, "/home/boat/proxyISP/ProxyOpt/pytorch-msssim/")
+print(os.getcwd())
+print(sys.path)
+from ISP_tools.ProxyISPDataset import ProxyISPDataset, EXPERIMENT_OUTPUT_PATH
+from proxy_utils import extract_iteration
+from ProxyOpt.model import U_Net
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 import torch.optim.lr_scheduler as lr_scheduler
-
 from data.dataset import HomoAffTpsDataset
 from utils.loss import L1LossMasked
 from utils.optimize import train_epoch, validate_epoch
-from model.net import DGCNet
 
+def load_proxy_model_and_dataset(proxydgc_config):
+    PROXYOPT_BASE_PATH = Path("/home/boat/proxyISP/ProxyOpt/")
+    print("proxydgc_config", proxydgc_config)    
+    with open(proxydgc_config["config_path"], "r") as f:
+        yaml_dict = yaml.safe_load(f)
+
+    config = yaml_dict["config"]
+    openisp_config = yaml_dict["openisp_config"]
+    hyp_setting = yaml_dict["hyp_setting"]
+
+    stage2_output_dir = Path("proxyopt_output") / proxydgc_config["experiment_name"]
+
+    loaded_param_layer = None
+    proxyopt_checkpoint_object = None
+
+    checkpoint_dir = stage2_output_dir / "proxyopt_checkpoints"
+    if os.path.exists(checkpoint_dir):
+        checkpoints = list(os.scandir(checkpoint_dir))
+        checkpoints = sorted(checkpoints, key = lambda x: int(x.name.split("_")[-1].split(".")[0]))
+        checkpoints = checkpoints[::-1]
+        print("checkpoints", [p.name for p in checkpoints])
+        load_attempt = 0 # in case of corrupt file
+        max_attempt = 5
+        load_success = False
+        if checkpoints.__len__() > 0:
+            import pickle
+            while load_attempt <= max_attempt and load_attempt < len(checkpoints) and not load_success:
+                try:
+                    checkpoint_path = checkpoints[load_attempt]
+                    print("attempt loading", checkpoint_path.path)
+                    with open(checkpoint_path.path, "rb") as f:
+                        proxyopt_checkpoint_object = pickle.load(f)
+                    loaded_param_layer = proxyopt_checkpoint_object["proxy_hype"]
+                    train_proxy_from_it = int(checkpoint_path.name.split("_")[-1].split(".")[0])
+                    load_success = True
+                except Exception as e:
+                    print("error", e)
+                    load_attempt += 1
+        if load_attempt == max_attempt:
+            raise Exception(f"apptemted to load checkpoint exceed {load_attempt} times! which were failed!")
+
+    output_dir = PROXYOPT_BASE_PATH / EXPERIMENT_OUTPUT_PATH / config["experiment_name"]
+    checkpoint_dir = output_dir / "checkpoints"
+    # checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    checkpoint_files = os.listdir(output_dir / "checkpoints")
+
+    latest_file = max(checkpoint_files, key=lambda f: extract_iteration(f))
+
+    latest_obj = torch.load(output_dir / "checkpoints" / latest_file)
+
+    # config = latest_obj["config"]
+
+    # Model and dataset initialization
+    in_channels = 1
+    if config["input_type"] == "stacked":
+        in_channels = 4  # GRGB
+
+    additional_conf = {
+        # "target_image": ["/home/boat/proxyISP/data/s21fe_dataset/20240115_123915.dng"],
+        # "target_image": ["/home/boat/proxyISP/data/s21fe_dataset/20240117_182706.dng"],
+        "proxyopt_base_path": "/home/boat/proxyISP/ProxyOpt/"
+    }
+
+    if "target_images" in proxydgc_config:
+        raw_images = [str(p) for p in Path(proxydgc_config["target_images"]).rglob("*.dng")]
+        additional_conf["target_image"] = raw_images
+        # print(additional_conf["target_image"])
+        print("target images found", len(additional_conf["target_image"]))
+
+    dataset = ProxyISPDataset(config, openisp_config, hyp_setting, additional_conf)
+
+    raw, _, sample_hyp = dataset.__getitem__(0)
+    param_number = sample_hyp.shape[-1]
+
+    net = U_Net(in_channels, 3, step_flag=3, img_size=config["img_size"], param_number=param_number)
+    net.load_state_dict(latest_obj["model_state_dict"])
+    net = net.to("cuda")
+
+    # Setup target and starting hyperparameters
+    dataset.switch_stage2()
+    net.img_size = dataset.target_size
+    start_hyp = dataset.get_original_hyp(True, True, add_eps = False)
+    net.load_param_layer(start_hyp)
+
+    if loaded_param_layer is not None:
+        net.param_layer = torch.tensor(loaded_param_layer).to("cuda")
+        net.param_layer.requires_grad = True
+
+    net.set_requires_param_layer_grad(True)
+
+    return net, dataset, proxyopt_checkpoint_object
 
 if __name__ == "__main__":
     # Argument parsing
     parser = argparse.ArgumentParser(description='DGC-Net train script')
     # Paths
+    parser.add_argument('--proxydgc-config', type=str, help='Path to the proxy-dgc-net config file',)
     parser.add_argument('--image-data-path', type=str, default='',
                         help='path to TokyoTimeMachine dataset and csv files')
     parser.add_argument('--metadata-path', type=str, default='./data/',
@@ -71,13 +174,14 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    mean_vector = np.array([0.485, 0.456, 0.406])
-    std_vector = np.array([0.229, 0.224, 0.225])
-    normTransform = transforms.Normalize(mean_vector, std_vector)
-    dataset_transforms = transforms.Compose([
-            transforms.ToTensor(),
-            normTransform
-        ])
+    # mean_vector = np.array([0.485, 0.456, 0.406])
+    # std_vector = np.array([0.229, 0.224, 0.225])
+    # normTransform = transforms.Normalize(mean_vector, std_vector)
+    # dataset_transforms = transforms.Compose([
+    #         transforms.ToTensor(),
+    #         normTransform
+    #     ])
+    dataset_transforms = None
 
     pyramid_param = [15, 30, 60, 120, 240]
     weights_loss_coeffs = [1, 1, 1, 1, 1]
@@ -96,6 +200,12 @@ if __name__ == "__main__":
             csv_file_test = args.csv_path_test
         else:
             raise Exception("Train csv path is provided but test is not")
+    
+    proxydgc_config = None
+    with open(args.proxydgc_config, "r") as f:
+        proxydgc_config = yaml.safe_load(f)
+    assert proxydgc_config != None
+    proxy, proxy_isp_dataset, proxyopt_checkpoint = load_proxy_model_and_dataset(proxydgc_config)
 
     train_dataset = \
         HomoAffTpsDataset(image_path=args.image_data_path,
@@ -159,6 +269,9 @@ if __name__ == "__main__":
         train_loss = train_epoch(model,
                                  optimizer,
                                  train_dataloader,
+                                 proxy_isp_dataset,
+                                 proxydgc_config,
+                                 proxy,
                                  device,
                                  criterion_grid=criterion_grid,
                                  criterion_matchability=criterion_match,
@@ -169,6 +282,9 @@ if __name__ == "__main__":
         # Validation
         val_loss_grid = validate_epoch(model,
                                        val_dataloader,
+                                       proxy_isp_dataset,
+                                       proxydgc_config,
+                                       proxy,
                                        device,
                                        criterion_grid=criterion_grid,
                                        criterion_matchability=criterion_match,

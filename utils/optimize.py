@@ -4,11 +4,85 @@ import cv2
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
+import rawpy
 
+
+def read_and_process_proxy(raw_path, proxy_isp_dataset, proxy, proxydgc_config):
+    adaptivepool2d = torch.nn.AdaptiveAvgPool2d(proxydgc_config["pooled_size"])
+    bayer = rawpy.imread(raw_path).raw_image
+    #TODO make configurable
+    bayer = bayer[540:2460, 1040:2960] # 1920, 1920
+    # raw_image = raw_image[1680: 1680 + 640, 1180:1180 + 640] # 640, 640
+    # raw_image = raw_image[0:640, 0:640]
+
+    print("process raw with proxy hype:", proxy.return_param_value())
+    raw_image = proxy_isp_dataset.preprocess_raw(bayer)
+
+    raw_image = raw_image.to("cuda")
+
+    input_image = proxy(raw_image[None, :, :, :])[0]
+    print("MEMORY after proxy forward pass:",  '{:,}'.format(torch.cuda.memory_allocated()))
+
+    proxy_output_image = input_image.cpu().detach()
+
+    input_image = adaptivepool2d(input_image)
+
+    input_image = input_image.clamp(0, 1)
+
+    # input_image = input_image.mean(dim = 0)
+    # open("temp_log/after_reduce_image_shape", "w").write(str(input_image.shape))
+
+    # input_image = input_image.astype('float32') / 255.0
+    return input_image, proxy_output_image, bayer
+
+def collate_fn(batch):
+    collated = {}
+    if len(batch) == 0:
+        return collated
+    
+    keys = batch[0].keys()
+    
+    for key in keys:
+        values = [sample[key] for sample in batch]
+        values = torch.stack(values, dim=0) if isinstance(values[0], torch.Tensor) else values
+        # if torch.is_tensor(values[0]):
+        collated[key] = values
+            # print(f"Error stacking values for key: {key}", values)
+        # else:
+            # collated[key] = values  # e.g. list of strings, numbers, etc.
+
+    
+    return collated
+
+def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, batch):
+    output_dicts = []
+    for transform_type, source_img_name, theta in zip(batch['transform_type'],
+                                                            batch['source_img_name'],
+                                                            batch['theta']):
+        image, proxy_output_image, bayer = \
+           read_and_process_proxy(
+               source_img_name,
+               proxy_isp_dataset,
+               proxy,
+               proxydgc_config
+            )
+        
+        output_dict = dataset.process_sample(
+            transform_type, image, theta
+        )
+
+        output_dicts.append(output_dict)
+    
+    output = collate_fn(output_dicts)
+    return output
+        
 
 def train_epoch(net,
                 optimizer,
                 train_loader,
+                proxy_isp_dataset,
+                proxydgc_config,
+                proxy,
                 device,
                 criterion_grid,
                 criterion_matchability=None,
@@ -40,6 +114,17 @@ def train_epoch(net,
     pbar = tqdm(enumerate(train_loader), total=len(train_loader))
     for i, mini_batch in pbar:
 
+        # preprocessing mini-batch
+        mini_batch = preprocess_sample_batch(
+            train_loader.dataset,
+            proxy_isp_dataset,
+            proxydgc_config,
+            proxy,
+            mini_batch
+        )
+
+        # print("Mini batch", mini_batch)
+
         optimizer.zero_grad()
 
         # net predictions
@@ -56,7 +141,8 @@ def train_epoch(net,
 
         # grid loss components (over all layers of the feature pyramid):
         for k in range(0, len(estimates_grid)):
-
+            print([i.shape for i in mini_batch['correspondence_map_pyro'][k]])
+            exit(0)
             grid_gt = mini_batch['correspondence_map_pyro'][k].to(device)
             bs, s_x, s_y, _ = grid_gt.shape
 
@@ -118,6 +204,9 @@ def train_epoch(net,
 
 def validate_epoch(net,
                    val_loader,
+                   proxy_isp_dataset,
+                   proxydgc_config,
+                   proxy,
                    device,
                    criterion_grid,
                    criterion_matchability=None,
@@ -151,6 +240,15 @@ def validate_epoch(net,
     with torch.no_grad():
         pbar = tqdm(enumerate(val_loader), total=len(val_loader))
         for i, mini_batch in pbar:
+
+            # preprocessing mini-batch
+            mini_batch = preprocess_sample_batch(
+                val_loader.dataset,
+                proxy_isp_dataset,
+                proxydgc_config,
+                proxy,
+                mini_batch
+            )
             # net predictions
             estimates_grid, estimates_mask = \
                 net(mini_batch['source_image'].to(device),

@@ -48,6 +48,48 @@ def center_crop(img, size):
 
     return img_pad, x1, y1
 
+import torch
+import torch.nn.functional as F
+
+def center_crop_pytorch(img: torch.Tensor, size):
+    """
+    Center crop a PyTorch tensor image of shape [C, H, W]
+    Args:
+        img: input tensor [C, H, W]
+        size: desired crop size (int or tuple of (h, w))
+    Returns:
+        cropped_img: center-cropped (and padded if needed) tensor [C, crop_h, crop_w]
+        x1, y1: top-left corner coordinates of crop in padded image
+    """
+    if not isinstance(size, tuple):
+        size = (size, size)
+
+    crop_h, crop_w = size
+    print("image.shape", img.shape)
+    C, H, W = img.shape
+
+    # Pad if needed
+    pad_h = max(0, crop_h - H)
+    pad_w = max(0, crop_w - W)
+
+    # Pad equally on both sides (left/right, top/bottom)
+    padding = [pad_w // 2, pad_w - pad_w // 2,
+               pad_h // 2, pad_h - pad_h // 2]  # [left, right, top, bottom]
+
+    if any(p > 0 for p in padding):
+        img = F.pad(img, padding, mode='constant', value=0)
+
+    # New shape after padding
+    _, H_pad, W_pad = img.shape
+
+    # Crop center
+    y1 = (H_pad - crop_h) // 2
+    x1 = (W_pad - crop_w) // 2
+
+    cropped_img = img[:, y1:y1 + crop_h, x1:x1 + crop_w]
+
+    return cropped_img, x1, y1
+
 
 class HPatchesDataset(Dataset):
     """
@@ -326,17 +368,10 @@ class HomoAffTpsDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
+        # to be preprocessed outside of the dataset class
         data = self.df.iloc[idx]
-        # get the transformation type flag
         transform_type = data['aff/tps/homo'].astype('uint8')
-
-        # aff/tps transformations
         if transform_type == 0 or transform_type == 1:
-            # read image
-            source_img_name = osp.join(self.img_path, data.fname)
-            source_img = cv2.cvtColor(cv2.imread(source_img_name),
-                                      cv2.COLOR_BGR2RGB)
-
             if transform_type == 0:
                 theta = data.iloc[2:8].values.astype('float').reshape(2, 3)
                 theta = torch.Tensor(theta.astype(np.float32)).expand(1, 2, 3)
@@ -345,9 +380,22 @@ class HomoAffTpsDataset(Dataset):
                 theta = np.expand_dims(np.expand_dims(theta, 1), 2)
                 theta = torch.Tensor(theta.astype(np.float32))
                 theta = theta.expand(1, 18, 1, 1)
+        elif transform_type == 2:
+            theta = data.iloc[2:11].values.astype('double').reshape(3, 3)
+        return {
+            'transform_type': transform_type,
+            'source_img_name': data.fname,
+            'theta': theta,
+        }
+    
+    def process_sample(self, transform_type, source_img, theta, device="cuda"):
+        if transform_type == 0 or transform_type == 1:
+            # read image
+            # source_img = cv2.cvtColor(source_img)
+
 
             # make arrays float tensor for subsequent processing
-            image = torch.Tensor(source_img.astype(np.float32))
+            # image = torch.Tensor(source_img.astype(np.float32))
 
             if image.numpy().ndim == 2:
                 image = \
@@ -355,7 +403,7 @@ class HomoAffTpsDataset(Dataset):
                                             source_img.astype(np.float32),
                                             source_img.astype(np.float32))))
 
-            image = image.transpose(1, 2).transpose(0, 1)
+            # image = image.transpose(1, 2).transpose(0, 1)
 
             # Resize image using bilinear sampling with identity affine
             # image is 480x640
@@ -390,35 +438,53 @@ class HomoAffTpsDataset(Dataset):
         # Homography transformation
         elif transform_type == 2:
             # Homography matrix for 768x576 image resolution
-            theta = data.iloc[2:11].values.astype('double').reshape(3, 3)
+            # theta = data.iloc[2:11].values.astype('double').reshape(3, 3)
 
-            img_src_orig = \
-                cv2.cvtColor(cv2.resize(cv2.imread(osp.join(self.img_path,
-                                                            data.fname)),
-                                        None,
-                                        fx=1.2,
-                                        fy=1.2,
-                                        interpolation=cv2.INTER_LINEAR),
-                             cv2.COLOR_BGR2RGB)
+            # img_src_orig = \
+            #     cv2.cvtColor(cv2.resize(cv2.imread(osp.join(self.img_path,
+            #                                                 data.fname)),
+            #                             None,
+            #                             fx=1.2,
+            #                             fy=1.2,
+            #                             interpolation=cv2.INTER_LINEAR),
+            #                  cv2.COLOR_BGR2RGB)
+
+            # img_src_orig = \
+            #     cv2.resize(source_img,
+            #                         None,
+            #                         fx=1.2,
+            #                         fy=1.2,
+            #                         interpolation=cv2.INTER_LINEAR)
+            
+            # substitute for cv2 resize
+            img = source_img.unsqueeze(0)
+            _, _, H, W = img.shape
+            new_H = int(H * 1.2)
+            new_W = int(W * 1.2)
+            img_src_orig = F.interpolate(img, size=(new_H, new_W), mode='bilinear', align_corners=False)
+            img_src_orig = img_src_orig.squeeze(0)
 
             # get a central crop:
-            img_src_crop, x1_crop, y1_crop = center_crop(img_src_orig,
+            img_src_crop, x1_crop, y1_crop = center_crop_pytorch(img_src_orig,
                                                          self.W_OUT)
 
             # Obtaining the full and crop grids out of H
             grid_full, grid_crop = self.get_grid(theta,
                                                  ccrop=(x1_crop, y1_crop))
 
+            grid_full = grid_full.to(device)
+            grid_crop = grid_crop.to(device)
             # warp the fullsize original source image
-            img_src_orig = torch.Tensor(img_src_orig.astype(np.float32))
-            img_src_orig = img_src_orig.permute(2, 0, 1)
+            # img_src_orig = torch.Tensor(img_src_orig.astype(np.float32))
+            # img_src_orig = img_src_orig.permute(2, 0, 1) # already in [C, H, W] format
             img_orig_target_vrbl = F.grid_sample(img_src_orig.unsqueeze(0),
                                                  grid_full)
-            img_orig_target_vrbl = \
-                img_orig_target_vrbl.squeeze().permute(1, 2, 0)
+            # img_orig_target_vrbl = \
+            #     img_orig_target_vrbl.squeeze().permute(1, 2, 0)
+            img_orig_target_vrbl = img_orig_target_vrbl.squeeze(0)
 
             # get the central crop of the target image
-            img_target_crop, _, _ = center_crop(img_orig_target_vrbl.numpy(),
+            img_target_crop, _, _ = center_crop_pytorch(img_orig_target_vrbl,
                                                 self.W_OUT)
 
         else:
@@ -430,14 +496,18 @@ class HomoAffTpsDataset(Dataset):
             cropped_target_image = \
                 self.transforms(img_target_crop.astype(np.uint8))
         else:
-            cropped_source_image = \
-                torch.Tensor(img_src_crop.astype(np.float32))
-            cropped_target_image = \
-                torch.Tensor(img_target_crop.astype(np.float32))
+            cropped_source_image = img_src_crop
+            cropped_target_image = img_target_crop
+        # already in [C, H, W] format and already a tensor
+        # else:
+        #     cropped_source_image = \
+        #         torch.Tensor(img_src_crop.astype(np.float32))
+        #     cropped_target_image = \
+        #         torch.Tensor(img_target_crop.astype(np.float32))
 
-            # convert to [C, H, W] convention (for tensors)
-            cropped_source_image = cropped_source_image.permute(-1, 0, 1)
-            cropped_target_image = cropped_target_image.permute(-1, 0, 1)
+        #     # convert to [C, H, W] convention (for tensors)
+        #     cropped_source_image = cropped_source_image.permute(-1, 0, 1)
+        #     cropped_target_image = cropped_target_image.permute(-1, 0, 1)
 
         # consturct a pyramid with a corresponding grid on each layer
         grid_pyramid = []
@@ -466,7 +536,7 @@ class HomoAffTpsDataset(Dataset):
         elif transform_type == 2:
             grid = grid_crop.squeeze(0)
             for layer_size in self.pyramid_param:
-                grid_m = torch.from_numpy(cv2.resize(grid.numpy(),
+                grid_m = torch.from_numpy(cv2.resize(grid.cpu().detach().numpy(),
                                                      (layer_size, layer_size)))
                 mask = grid_m.ge(-1) & grid_m.le(1)
                 grid_pyramid.append(grid_m)
@@ -478,6 +548,160 @@ class HomoAffTpsDataset(Dataset):
                 'correspondence_map_pyro': grid_pyramid,
                 'mask_x': mask_x,
                 'mask_y': mask_y}
+
+    # def __getitem__(self, idx):
+    #     data = self.df.iloc[idx]
+    #     # get the transformation type flag
+    #     transform_type = data['aff/tps/homo'].astype('uint8')
+
+    #     # aff/tps transformations
+    #     if transform_type == 0 or transform_type == 1:
+    #         # read image
+    #         source_img_name = osp.join(self.img_path, data.fname)
+    #         source_img = cv2.cvtColor(cv2.imread(source_img_name),
+    #                                   cv2.COLOR_BGR2RGB)
+
+    #         if transform_type == 0:
+    #             theta = data.iloc[2:8].values.astype('float').reshape(2, 3)
+    #             theta = torch.Tensor(theta.astype(np.float32)).expand(1, 2, 3)
+    #         else:
+    #             theta = data.iloc[2:].values.astype('float')
+    #             theta = np.expand_dims(np.expand_dims(theta, 1), 2)
+    #             theta = torch.Tensor(theta.astype(np.float32))
+    #             theta = theta.expand(1, 18, 1, 1)
+
+    #         # make arrays float tensor for subsequent processing
+    #         image = torch.Tensor(source_img.astype(np.float32))
+
+    #         if image.numpy().ndim == 2:
+    #             image = \
+    #                 torch.Tensor(np.dstack((source_img.astype(np.float32),
+    #                                         source_img.astype(np.float32),
+    #                                         source_img.astype(np.float32))))
+
+    #         image = image.transpose(1, 2).transpose(0, 1)
+
+    #         # Resize image using bilinear sampling with identity affine
+    #         # image is 480x640
+    #         image = self.transform_image(image.unsqueeze(0),
+    #                                      self.H_AFF_TPS,
+    #                                      self.W_AFF_TPS)
+
+    #         # generate symmetrically padded image for bigger sampling region
+    #         image_pad = self.symmetric_image_pad(image, padding_factor=0.5)
+
+    #         # get cropped source image (240x240)
+    #         img_src_crop = \
+    #             self.transform_image(image_pad,
+    #                                  self.H_OUT,
+    #                                  self.W_OUT,
+    #                                  padding_factor=0.5,
+    #                                  crop_factor=9 / 16).squeeze().numpy()
+
+    #         # get cropped target image (240x240)
+    #         img_target_crop = \
+    #             self.transform_image(image_pad,
+    #                                  self.H_OUT,
+    #                                  self.W_OUT,
+    #                                  padding_factor=0.5,
+    #                                  crop_factor=9 / 16,
+    #                                  theta=theta).squeeze().numpy()
+
+    #         # convert to [H, W, C] convention (for np arrays)
+    #         img_src_crop = img_src_crop.transpose((1, 2, 0))
+    #         img_target_crop = img_target_crop.transpose((1, 2, 0))
+
+    #     # Homography transformation
+    #     elif transform_type == 2:
+    #         # Homography matrix for 768x576 image resolution
+    #         theta = data.iloc[2:11].values.astype('double').reshape(3, 3)
+
+    #         img_src_orig = \
+    #             cv2.cvtColor(cv2.resize(cv2.imread(osp.join(self.img_path,
+    #                                                         data.fname)),
+    #                                     None,
+    #                                     fx=1.2,
+    #                                     fy=1.2,
+    #                                     interpolation=cv2.INTER_LINEAR),
+    #                          cv2.COLOR_BGR2RGB)
+
+    #         # get a central crop:
+    #         img_src_crop, x1_crop, y1_crop = center_crop(img_src_orig,
+    #                                                      self.W_OUT)
+
+    #         # Obtaining the full and crop grids out of H
+    #         grid_full, grid_crop = self.get_grid(theta,
+    #                                              ccrop=(x1_crop, y1_crop))
+
+    #         # warp the fullsize original source image
+    #         img_src_orig = torch.Tensor(img_src_orig.astype(np.float32))
+    #         img_src_orig = img_src_orig.permute(2, 0, 1)
+    #         img_orig_target_vrbl = F.grid_sample(img_src_orig.unsqueeze(0),
+    #                                              grid_full)
+    #         img_orig_target_vrbl = \
+    #             img_orig_target_vrbl.squeeze().permute(1, 2, 0)
+
+    #         # get the central crop of the target image
+    #         img_target_crop, _, _ = center_crop(img_orig_target_vrbl.numpy(),
+    #                                             self.W_OUT)
+
+    #     else:
+    #         print('Error: transformation type')
+
+    #     if self.transforms is not None:
+    #         cropped_source_image = \
+    #             self.transforms(img_src_crop.astype(np.uint8))
+    #         cropped_target_image = \
+    #             self.transforms(img_target_crop.astype(np.uint8))
+    #     else:
+    #         cropped_source_image = \
+    #             torch.Tensor(img_src_crop.astype(np.float32))
+    #         cropped_target_image = \
+    #             torch.Tensor(img_target_crop.astype(np.float32))
+
+    #         # convert to [C, H, W] convention (for tensors)
+    #         cropped_source_image = cropped_source_image.permute(-1, 0, 1)
+    #         cropped_target_image = cropped_target_image.permute(-1, 0, 1)
+
+    #     # consturct a pyramid with a corresponding grid on each layer
+    #     grid_pyramid = []
+    #     mask_x = []
+    #     mask_y = []
+    #     if transform_type == 0:
+    #         for layer_size in self.pyramid_param:
+    #             grid = self.generate_grid(layer_size,
+    #                                       layer_size,
+    #                                       theta).squeeze(0)
+    #             mask = grid.ge(-1) & grid.le(1)
+    #             grid_pyramid.append(grid)
+    #             mask_x.append(mask[:, :, 0])
+    #             mask_y.append(mask[:, :, 1])
+    #     elif transform_type == 1:
+    #         grid = self.generate_grid(self.H_OUT,
+    #                                   self.W_OUT,
+    #                                   theta).squeeze(0)
+    #         for layer_size in self.pyramid_param:
+    #             grid_m = torch.from_numpy(cv2.resize(grid.numpy(),
+    #                                                  (layer_size, layer_size)))
+    #             mask = grid_m.ge(-1) & grid_m.le(1)
+    #             grid_pyramid.append(grid_m)
+    #             mask_x.append(mask[:, :, 0])
+    #             mask_y.append(mask[:, :, 1])
+    #     elif transform_type == 2:
+    #         grid = grid_crop.squeeze(0)
+    #         for layer_size in self.pyramid_param:
+    #             grid_m = torch.from_numpy(cv2.resize(grid.numpy(),
+    #                                                  (layer_size, layer_size)))
+    #             mask = grid_m.ge(-1) & grid_m.le(1)
+    #             grid_pyramid.append(grid_m)
+    #             mask_x.append(mask[:, :, 0])
+    #             mask_y.append(mask[:, :, 1])
+
+    #     return {'source_image': cropped_source_image,
+    #             'target_image': cropped_target_image,
+    #             'correspondence_map_pyro': grid_pyramid,
+    #             'mask_x': mask_x,
+    #             'mask_y': mask_y}
 
 
 class TpsGridGen(nn.Module):
