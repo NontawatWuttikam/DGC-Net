@@ -43,9 +43,20 @@ def collate_fn(batch):
     keys = batch[0].keys()
     
     for key in keys:
-        values = [sample[key] for sample in batch]
-        values = torch.stack(values, dim=0) if isinstance(values[0], torch.Tensor) else values
+        if isinstance(batch[0][key], torch.Tensor):
+            values = [sample[key] for sample in batch]
+            values = torch.stack(values, dim=0)
+        elif key == "correspondence_map_pyro":
+            values = []
+            for sz in range(len(batch[0][key])):
+                scale_samples = []
+                for sample in batch:
+                    scale_samples.append(sample[key][sz])
+                scale_samples  = torch.stack(scale_samples, dim=0)
+                values.append(scale_samples)
+            # values = torch.stack(values, dim=1)
         # if torch.is_tensor(values[0]):
+        assert values is not None, f"Values for key {key} are None"
         collated[key] = values
             # print(f"Error stacking values for key: {key}", values)
         # else:
@@ -141,8 +152,8 @@ def train_epoch(net,
 
         # grid loss components (over all layers of the feature pyramid):
         for k in range(0, len(estimates_grid)):
-            print([i.shape for i in mini_batch['correspondence_map_pyro'][k]])
-            exit(0)
+            # print("length of correspondence_map_pyro", len(mini_batch['correspondence_map_pyro'][0]))
+            # exit(0)
             grid_gt = mini_batch['correspondence_map_pyro'][k].to(device)
             bs, s_x, s_y, _ = grid_gt.shape
 
