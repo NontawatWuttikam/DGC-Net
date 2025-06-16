@@ -175,14 +175,14 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # mean_vector = np.array([0.485, 0.456, 0.406])
-    # std_vector = np.array([0.229, 0.224, 0.225])
-    # normTransform = transforms.Normalize(mean_vector, std_vector)
-    # dataset_transforms = transforms.Compose([
-    #         transforms.ToTensor(),
-    #         normTransform
-    #     ])
-    dataset_transforms = None
+    mean_vector = np.array([0.485, 0.456, 0.406])
+    std_vector = np.array([0.229, 0.224, 0.225])
+    normTransform = transforms.Normalize(mean_vector, std_vector)
+    dataset_transforms = transforms.Compose([
+            # transforms.ToTensor(),
+            normTransform
+        ])
+    # dataset_transforms = None
 
     pyramid_param = [15, 30, 60, 120, 240]
     weights_loss_coeffs = [1, 1, 1, 1, 1]
@@ -248,18 +248,32 @@ if __name__ == "__main__":
     else:
         raise ValueError('check the model type [dgc, dgcm]')
 
-    model = nn.DataParallel(model)
+    # model = nn.DataParallel(model)
     model = model.to(device)
 
-    # Optimizer
-    optimizer = \
-        optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
-                   lr=args.lr,
-                   weight_decay=args.weight_decay)
+    if "pretrained" in proxydgc_config:
+        print(colored('==> ', 'blue') + 'Loading pretrained model from:',
+              proxydgc_config["pretrained"])
+        checkpoint = torch.load(proxydgc_config["pretrained"])
+        # print("checkpoint", list(checkpoint["state_dict"].keys()))
+        model.load_state_dict(checkpoint['state_dict'])
+        print(colored('==> ', 'blue') + 'Pretrained model loaded.')
+        # exit(0)
+
+    # proxyopt freeze the dgc-net parameters
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # unused because we will freeze the dgc-net parameters
+    # # Optimizer
+    # optimizer = \
+    #     optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
+    #                lr=args.lr,
+    #                weight_decay=args.weight_decay)
     # Scheduler
-    scheduler = lr_scheduler.MultiStepLR(optimizer,
-                                         milestones=[2, 15, 30, 45, 60],
-                                         gamma=0.1)
+    # scheduler = lr_scheduler.MultiStepLR(optimizer,
+    #                                      milestones=[2, 15, 30, 45, 60],
+    #                                      gamma=0.1)
     # Criterions
     criterion_grid = L1LossMasked().to(device)
     criterion_match = None
@@ -272,11 +286,11 @@ if __name__ == "__main__":
 
     train_started = time.time()
 
+    accum_loss = 0
     for epoch in range(args.n_epoch):
-        scheduler.step()
+        # scheduler.step()
         # Training one epoch
-        train_loss = train_epoch(model,
-                                 optimizer,
+        train_loss, current_accum_loss = train_epoch(model,
                                  train_dataloader,
                                  proxy_isp_dataset,
                                  proxydgc_config,
@@ -284,10 +298,12 @@ if __name__ == "__main__":
                                  proxy,
                                  device,
                                  epoch,
+                                 accum_loss,
                                  criterion_grid=criterion_grid,
                                  criterion_matchability=criterion_match,
                                  loss_grid_weights=weights_loss_coeffs)
         train_losses.append(train_loss)
+        accum_loss = current_accum_loss
         print(colored('==> ', 'green') + 'Train average loss:', train_loss)
 
         # Validation
@@ -310,28 +326,29 @@ if __name__ == "__main__":
         np.save(osp.join(args.snapshots, cur_snapshot, 'logs.npy'),
                 [train_losses, val_losses])
 
-        if epoch > args.start_epoch:
-            '''
-            We will be saving only the snapshot which
-            has lowest loss value on the validation set
-            '''
-            cur_snapshot_name = osp.join(args.snapshots,
-                                         cur_snapshot,
-                                         'epoch_{}.pth'.format(epoch + 1))
-            if prev_model is None:
-                torch.save({'state_dict': model.module.state_dict(),
-                            'optimizer': optimizer.state_dict()},
-                           cur_snapshot_name)
-                prev_model = cur_snapshot_name
-                best_val = val_loss_grid
-            else:
-                if val_loss_grid < best_val:
-                    os.remove(prev_model)
-                    best_val = val_loss_grid
-                    print('Saved snapshot:', cur_snapshot_name)
-                    torch.save({'state_dict': model.module.state_dict(),
-                                'optimizer': optimizer.state_dict()},
-                               cur_snapshot_name)
-                    prev_model = cur_snapshot_name
+        # disable dgc-net snapshot saving
+        # if epoch > args.start_epoch:
+        #     '''
+        #     We will be saving only the snapshot which
+        #     has lowest loss value on the validation set
+        #     '''
+        #     cur_snapshot_name = osp.join(args.snapshots,
+        #                                  cur_snapshot,
+        #                                  'epoch_{}.pth'.format(epoch + 1))
+        #     if prev_model is None:
+        #         torch.save({'state_dict': model.module.state_dict(),
+        #                     'optimizer': optimizer.state_dict()},
+        #                    cur_snapshot_name)
+        #         prev_model = cur_snapshot_name
+        #         best_val = val_loss_grid
+        #     else:
+        #         if val_loss_grid < best_val:
+        #             os.remove(prev_model)
+        #             best_val = val_loss_grid
+        #             print('Saved snapshot:', cur_snapshot_name)
+        #             torch.save({'state_dict': model.module.state_dict(),
+        #                         'optimizer': optimizer.state_dict()},
+        #                        cur_snapshot_name)
+        #             prev_model = cur_snapshot_name
 
     print(args.seed, 'Training took:', time.time()-train_started, 'seconds')

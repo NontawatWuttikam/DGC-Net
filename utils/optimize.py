@@ -5,9 +5,12 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 import rawpy
-
+from torch.optim import Adam
 
 def read_and_process_proxy(raw_path, proxy_isp_dataset, proxy, proxydgc_config):
+    # check for proxy grad requirement
+    # print(proxy.param_layer.requires_grad)
+    # exit(0)
     adaptivepool2d = torch.nn.AdaptiveAvgPool2d(proxydgc_config["pooled_size"])
     bayer = rawpy.imread(raw_path).raw_image
     #TODO make configurable
@@ -33,6 +36,12 @@ def read_and_process_proxy(raw_path, proxy_isp_dataset, proxy, proxydgc_config):
     # open("temp_log/after_reduce_image_shape", "w").write(str(input_image.shape))
 
     # input_image = input_image.astype('float32') / 255.0
+    # DEBUG grad flow #1
+    # print("grad", proxy.param_layer.grad)
+    # input_image.sum().backward()
+    # print("grad_after", proxy.param_layer.grad)
+    # grad flow here
+    # exit(0)
     return input_image, proxy_output_image, bayer
 
 def collate_fn(batch):
@@ -80,9 +89,20 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
                proxydgc_config
             )
         
+        # DEBUG grad flow #3
+        # print("#3 grad", proxy.param_layer.grad)
+        # image.sum().backward()
+        # print("grad_after", proxy.param_layer.grad)
+        # exit(0)
+        # grad flow here
+        
         output_dict = dataset.process_sample(
             transform_type, image, theta
         )
+
+        # DEBUG grad flow #4
+        # print("grad", proxy.param_layer.grad)
+        # output
 
         output_dicts.append(output_dict)
         proxy_output_images.append(proxy_output_image)
@@ -97,7 +117,6 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
         
 
 def train_epoch(net,
-                optimizer,
                 train_loader,
                 proxy_isp_dataset,
                 proxydgc_config,
@@ -105,6 +124,7 @@ def train_epoch(net,
                 proxy,
                 device,
                 epoch,
+                accum_loss,
                 criterion_grid,
                 criterion_matchability=None,
                 loss_grid_weights=None,
@@ -113,7 +133,7 @@ def train_epoch(net,
     Training epoch script
     Args:
         net: model architecture
-        optimizer: optimizer to be used for traninig `net`
+        optimizer: optimizer to be used for traninig `net` # UNUSED
         train_loader: dataloader
         device: `cpu` or `gpu`
         criterion_grid: criterion for esimation pixel correspondence (L1Masked)
@@ -134,6 +154,11 @@ def train_epoch(net,
 
     pbar = tqdm(enumerate(train_loader), total=len(train_loader))
     for i, mini_batch in pbar:
+        # create proxyopt optimizer
+        proxy_gradient_to_log = None
+        optimizer = Adam([proxy.param_layer], lr=proxydgc_config["learning_rate"])
+        learning_rate = proxydgc_config["learning_rate"]
+
         n_iter = epoch * len(train_loader) + i
 
         # preprocessing mini-batch
@@ -146,6 +171,13 @@ def train_epoch(net,
         )
 
         optimizer.zero_grad()
+
+        # DEBUG grad flow #2
+        # print("#2 grad", proxy.param_layer.grad)
+        # mini_batch['source_image'].sum().backward()
+        # print("grad_after", proxy.param_layer.grad)
+        # exit(0)
+        # grad flow here
 
         # net predictions
         estimates_grid, estimates_mask = \
@@ -201,9 +233,23 @@ def train_epoch(net,
                                        match_mask_gt)
 
         Loss = Loss_masked_grid + L_coeff * Loss_match
+        Loss /= proxydgc_config["grad_ac_step"]
+        proxydgc_log_writer.add_scalar("Loss/current_totoal_loss", Loss.item(), n_iter)
+        proxydgc_log_writer.add_scalar("Loss/current_masked_grid_loss", Loss_masked_grid.item(), n_iter)
+        if estimates_mask is not None:
+            proxydgc_log_writer.add_scalar("Loss/current_match_loss", Loss_match.item(), n_iter)
+        proxydgc_log_writer.add_scalar("learning_rate", learning_rate, n_iter)
+        accum_loss += Loss.item()
         Loss.backward()
 
-        optimizer.step()
+        if (n_iter + 1) % proxydgc_config["grad_ac_step"] == 0:
+            proxy_gradient_to_log = proxy.param_layer.grad.cpu().detach().numpy()
+            optimizer.step()
+            optimizer.zero_grad()
+            proxy.update_param()
+
+            proxydgc_log_writer.add_scalar("Loss/accum_Loss", accum_loss, n_iter)
+            accum_loss = 0
 
         running_total_loss += Loss.item()
         if estimates_mask is not None:
@@ -218,8 +264,6 @@ def train_epoch(net,
                 'R_total_loss: %.3f/%.3f' % (running_total_loss / (i + 1),
                                              Loss.item()))
                 # logging proxy output images
-        proxy_gradient_to_log = None
-
         if n_iter % proxydgc_config["save_image_iter"] == 0:
             # original vs current hyp image
             bayer = batch_data["bayers"][0]
@@ -244,7 +288,6 @@ def train_epoch(net,
             idx = 0
             denormalized_hypes = proxy_isp_dataset.denormalize_hyp(proxy.return_param_value())
             for param in proxy_isp_dataset.hyp_setting["parameters"]:
-                print(param)
                 if param["type"] == "categorical":
                     for bin in range(param["values"].__len__()):
                         bin_name = param["values"][bin]
@@ -260,7 +303,7 @@ def train_epoch(net,
             assert idx == len(denormalized_hypes)
         
     running_total_loss /= len(train_loader)
-    return running_total_loss
+    return running_total_loss, accum_loss
 
 
 def validate_epoch(net,
@@ -305,7 +348,7 @@ def validate_epoch(net,
         for i, mini_batch in pbar:
 
             # preprocessing mini-batch
-            mini_batch = preprocess_sample_batch(
+            mini_batch, batch_data = preprocess_sample_batch(
                 val_loader.dataset,
                 proxy_isp_dataset,
                 proxydgc_config,

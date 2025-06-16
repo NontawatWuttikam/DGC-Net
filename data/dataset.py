@@ -337,6 +337,67 @@ class HomoAffTpsDataset(Dataset):
                                  Ywarp_crop_range], dim=-1)
         return grid_full.unsqueeze(0), grid_crop.unsqueeze(0)
 
+    # def get_grid_torch(self, H: torch.Tensor, ccrop, device='cuda'):
+    #     """
+    #     Compute full and cropped grid using a homography matrix `H`.
+    #     Args:
+    #         H (Tensor): [3, 3] homography matrix with requires_grad=True
+    #         ccrop (tuple): (x1_crop, y1_crop)
+    #         device (str): computation device
+    #     Returns:
+    #         grid_full: [1, H, W, 2] full normalized sampling grid
+    #         grid_crop: [1, H_out, W_out, 2] cropped normalized sampling grid
+    #     """
+
+    #     H = H.to(device)
+    #     H = H.float()  # Ensure H is float for precision
+
+    #     X_CCROP, Y_CCROP = ccrop[0], ccrop[1]
+    #     W_FULL, H_FULL = self.W_HOMO, self.H_HOMO
+    #     W_SCALE, H_SCALE = self.W_OUT, self.H_OUT
+
+    #     # Create mesh grid
+    #     y, x = torch.meshgrid(
+    #         torch.linspace(0, H_FULL - 1, H_FULL, device=device),
+    #         torch.linspace(0, W_FULL - 1, W_FULL, device=device),
+    #         indexing='ij'
+    #     )
+    #     ones = torch.ones_like(x)
+    #     grid_hom = torch.stack([x, y, ones], dim=0).view(3, -1)  # [3, H*W]
+
+    #     # Inverse homography
+    #     Hinv = torch.inverse(H)
+
+    #     # Apply inverse homography
+    #     warped = Hinv @ grid_hom  # [3, H*W]
+    #     Xw = warped[0, :] / (warped[2, :] + 1e-8)
+    #     Yw = warped[1, :] / (warped[2, :] + 1e-8)
+
+    #     # Reshape to [H, W]
+    #     X_grid = Xw.view(H_FULL, W_FULL)
+    #     Y_grid = Yw.view(H_FULL, W_FULL)
+
+    #     # Normalize to [-1, 1]
+    #     X_norm = 2 * X_grid / (W_FULL - 1) - 1
+    #     Y_norm = 2 * Y_grid / (H_FULL - 1) - 1
+    #     grid_full = torch.stack([X_norm, Y_norm], dim=-1).unsqueeze(0)  # [1, H, W, 2]
+
+    #     # Crop for grid_crop
+    #     X_crop = X_grid[Y_CCROP:Y_CCROP + H_SCALE, X_CCROP:X_CCROP + W_SCALE]
+    #     Y_crop = Y_grid[Y_CCROP:Y_CCROP + H_SCALE, X_CCROP:X_CCROP + W_SCALE]
+
+    #     # Get coordinate ranges for normalization
+    #     x_lin = torch.linspace(X_CCROP, X_CCROP + W_SCALE - 1, W_SCALE, device=device)
+    #     y_lin = torch.linspace(Y_CCROP, Y_CCROP + H_SCALE - 1, H_SCALE, device=device)
+    #     X_ref, Y_ref = torch.meshgrid(y_lin, x_lin, indexing='ij')
+
+    #     # Normalize crop to [-1, 1] range
+    #     X_crop_norm = 2 * (X_crop - X_ref) / (X_ref.max() - X_ref.min()) - 1
+    #     Y_crop_norm = 2 * (Y_crop - Y_ref) / (Y_ref.max() - Y_ref.min()) - 1
+    #     grid_crop = torch.stack([X_crop_norm, Y_crop_norm], dim=-1).unsqueeze(0)  # [1, H_out, W_out, 2]
+
+    #     return grid_full, grid_crop
+
     @staticmethod
     def symmetric_image_pad(image_batch, padding_factor):
         """
@@ -390,6 +451,7 @@ class HomoAffTpsDataset(Dataset):
     
     def process_sample(self, transform_type, source_img, theta, device="cuda"):
         if transform_type == 0 or transform_type == 1:
+            raise Exception("this proxyopt experiment should have transform_type 2 (homography) only")
             # read image
             # source_img = cv2.cvtColor(source_img)
 
@@ -491,10 +553,12 @@ class HomoAffTpsDataset(Dataset):
             print('Error: transformation type')
 
         if self.transforms is not None:
+            print("img_src_crop", img_src_crop.shape, img_src_crop.type)
+            # exit(0)
             cropped_source_image = \
-                self.transforms(img_src_crop.astype(np.uint8))
+                self.transforms(img_src_crop)
             cropped_target_image = \
-                self.transforms(img_target_crop.astype(np.uint8))
+                self.transforms(img_target_crop)
         else:
             cropped_source_image = img_src_crop
             cropped_target_image = img_target_crop
