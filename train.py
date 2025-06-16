@@ -28,6 +28,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 from data.dataset import HomoAffTpsDataset
 from utils.loss import L1LossMasked
 from utils.optimize import train_epoch, validate_epoch
+from tensorboardX import SummaryWriter
 
 def load_proxy_model_and_dataset(proxydgc_config):
     PROXYOPT_BASE_PATH = Path("/home/boat/proxyISP/ProxyOpt/")
@@ -207,6 +208,14 @@ if __name__ == "__main__":
     assert proxydgc_config != None
     proxy, proxy_isp_dataset, proxyopt_checkpoint = load_proxy_model_and_dataset(proxydgc_config)
 
+    proxydgc_log_path = Path("proxydgc_logs") / proxydgc_config["experiment_name"]
+
+    if not os.path.exists(proxydgc_log_path):
+        os.makedirs(proxydgc_log_path)
+    
+    # create tensorbaord instance
+    proxydgc_log_writer = SummaryWriter(str(proxydgc_log_path / "logs"))
+
     train_dataset = \
         HomoAffTpsDataset(image_path=args.image_data_path,
                           csv_file=csv_file_train,
@@ -271,8 +280,10 @@ if __name__ == "__main__":
                                  train_dataloader,
                                  proxy_isp_dataset,
                                  proxydgc_config,
+                                 proxydgc_log_writer,
                                  proxy,
                                  device,
+                                 epoch,
                                  criterion_grid=criterion_grid,
                                  criterion_matchability=criterion_match,
                                  loss_grid_weights=weights_loss_coeffs)
@@ -284,8 +295,10 @@ if __name__ == "__main__":
                                        val_dataloader,
                                        proxy_isp_dataset,
                                        proxydgc_config,
+                                       proxydgc_log_writer,
                                        proxy,
                                        device,
+                                       epoch,
                                        criterion_grid=criterion_grid,
                                        criterion_matchability=criterion_match,
                                        loss_grid_weights=weights_loss_coeffs)

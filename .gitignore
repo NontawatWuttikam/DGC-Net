@@ -7,3 +7,4 @@ pretrained_models/
 .ipynb_checkpoints/
 data/tinyTimeMachine/*
 model/pretrained_models/
+proxydgc_logs/*

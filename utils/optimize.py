@@ -67,6 +67,8 @@ def collate_fn(batch):
 
 def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, batch):
     output_dicts = []
+    proxy_output_images = []
+    bayers = []
     for transform_type, source_img_name, theta in zip(batch['transform_type'],
                                                             batch['source_img_name'],
                                                             batch['theta']):
@@ -83,9 +85,15 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
         )
 
         output_dicts.append(output_dict)
+        proxy_output_images.append(proxy_output_image)
+        bayers.append(bayer)
     
     output = collate_fn(output_dicts)
-    return output
+    data = {
+        "proxy_output_images": proxy_output_images
+        , "bayers": bayers
+    }
+    return output, data
         
 
 def train_epoch(net,
@@ -93,8 +101,10 @@ def train_epoch(net,
                 train_loader,
                 proxy_isp_dataset,
                 proxydgc_config,
+                proxydgc_log_writer,
                 proxy,
                 device,
+                epoch,
                 criterion_grid,
                 criterion_matchability=None,
                 loss_grid_weights=None,
@@ -124,17 +134,16 @@ def train_epoch(net,
 
     pbar = tqdm(enumerate(train_loader), total=len(train_loader))
     for i, mini_batch in pbar:
+        n_iter = epoch * len(train_loader) + i
 
         # preprocessing mini-batch
-        mini_batch = preprocess_sample_batch(
+        mini_batch, batch_data = preprocess_sample_batch(
             train_loader.dataset,
             proxy_isp_dataset,
             proxydgc_config,
             proxy,
             mini_batch
         )
-
-        # print("Mini batch", mini_batch)
 
         optimizer.zero_grad()
 
@@ -208,7 +217,48 @@ def train_epoch(net,
             pbar.set_description(
                 'R_total_loss: %.3f/%.3f' % (running_total_loss / (i + 1),
                                              Loss.item()))
+                # logging proxy output images
+        proxy_gradient_to_log = None
 
+        if n_iter % proxydgc_config["save_image_iter"] == 0:
+            # original vs current hyp image
+            bayer = batch_data["bayers"][0]
+            current_hyp = proxy.return_param_value()
+            current_hyp = proxy_isp_dataset.denormalize_hyp(current_hyp)
+            current_hyp_image = proxy_isp_dataset.process_raw(bayer, current_hyp, original_hyp = False)
+            current_hyp_image = torch.tensor(current_hyp_image.astype("float32") / 255.0)
+            current_hyp_image = torch.permute(current_hyp_image, (2, 0, 1))
+
+            initial_hyp_image = proxy_isp_dataset.process_raw(bayer, original_hyp=True)
+            initial_hyp_image = torch.tensor(initial_hyp_image.astype("float32") / 255.0)
+            initial_hyp_image = torch.permute(initial_hyp_image, (2, 0, 1))
+            stitched_image = torch.cat((initial_hyp_image, current_hyp_image), dim=2)
+            proxydgc_log_writer.add_image("image (initial, current)", stitched_image, n_iter)
+
+            # source, target
+            source_image = mini_batch['source_image'][0]
+            target_image = mini_batch['target_image'][0]
+            stitched_image = torch.cat((source_image, target_image), dim=2)
+            proxydgc_log_writer.add_image("image (source, target)", stitched_image, n_iter)
+        if n_iter % proxydgc_config["log_param_iter"] == 0:
+            idx = 0
+            denormalized_hypes = proxy_isp_dataset.denormalize_hyp(proxy.return_param_value())
+            for param in proxy_isp_dataset.hyp_setting["parameters"]:
+                print(param)
+                if param["type"] == "categorical":
+                    for bin in range(param["values"].__len__()):
+                        bin_name = param["values"][bin]
+                        proxydgc_log_writer.add_scalar("ISP_hyperparameters/" + param["name"]+f"|{bin_name}", denormalized_hypes[idx], n_iter)
+                        if proxy_gradient_to_log is not None:
+                            proxydgc_log_writer.add_scalar("grad/" + param["name"]+f"|{bin_name}", proxy_gradient_to_log[idx], n_iter)
+                        idx += 1
+                else:
+                    proxydgc_log_writer.add_scalar("ISP_hyperparameters/" + param["name"], denormalized_hypes[idx], n_iter)
+                    if proxy_gradient_to_log is not None:
+                        proxydgc_log_writer.add_scalar("grad/" + param["name"], proxy_gradient_to_log[idx], n_iter)
+                    idx += 1
+            assert idx == len(denormalized_hypes)
+        
     running_total_loss /= len(train_loader)
     return running_total_loss
 
@@ -217,8 +267,10 @@ def validate_epoch(net,
                    val_loader,
                    proxy_isp_dataset,
                    proxydgc_config,
+                   proxydgc_log_writer,
                    proxy,
                    device,
+                   epoch,
                    criterion_grid,
                    criterion_matchability=None,
                    loss_grid_weights=None,
