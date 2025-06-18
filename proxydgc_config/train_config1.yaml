@@ -2,7 +2,12 @@ experiment_name: 'proxydgc_train1'
 config_path: '/home/boat/proxyISP/ProxyOpt/train_configs/v16.1.yaml'
 target_images: /mnt/ssd2tb/boat/thesis/s21fe_dataset/raw_edgeContrastIndex_top100
 batch_size: 1
-pooled_size: [240, 320]
+pooling:
+    enable: True
+    # pooled_size: [240, 320]
+    pooled_size: [480, 640] # dont change, affect dense grid estimation in ground truth gebneration (default in dataset.py: [480, 640])
+    # pooled_size: [576, 768]
+    # pooled_size: [32,32]
 # learning_rate: 0.0005
 learning_rate: 0.0005 # 0.0005 x gradac=8
 save_image_iter: 100

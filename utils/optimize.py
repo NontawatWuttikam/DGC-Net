@@ -6,12 +6,18 @@ import torch
 import torch.nn.functional as F
 import rawpy
 from torch.optim import Adam
+import pickle
+import os
+from pathlib import Path
 
 def read_and_process_proxy(raw_path, proxy_isp_dataset, proxy, proxydgc_config):
     # check for proxy grad requirement
     # print(proxy.param_layer.requires_grad)
     # exit(0)
-    adaptivepool2d = torch.nn.AdaptiveAvgPool2d(proxydgc_config["pooled_size"])
+    if proxydgc_config["pooling"]["enable"]:
+        # print("pooling enabled")
+        # print("pooled size", proxydgc_config["pooled_size"])
+        adaptivepool2d = torch.nn.AdaptiveAvgPool2d(proxydgc_config["pooling"]["pooled_size"])
     bayer = rawpy.imread(raw_path).raw_image
     #TODO make configurable
     bayer = bayer[540:2460, 1040:2960] # 1920, 1920
@@ -28,7 +34,8 @@ def read_and_process_proxy(raw_path, proxy_isp_dataset, proxy, proxydgc_config):
 
     proxy_output_image = input_image.cpu().detach()
 
-    input_image = adaptivepool2d(input_image)
+    if proxydgc_config["pooling"]["enable"]:
+        input_image = adaptivepool2d(input_image)
 
     input_image = input_image.clamp(0, 1)
 
@@ -100,6 +107,21 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
             transform_type, image, theta
         )
 
+        probe_output = True
+        probe_save_location = "probe_output"
+        if probe_output:
+            source_image = (output_dict['source_image'].cpu().detach().permute(1, 2, 0) * 255.0).numpy().astype(np.uint8)
+            target_image = (output_dict['target_image'].cpu().detach().permute(1, 2, 0) * 255.0).numpy().astype(np.uint8)
+            correspondence_map_pyro = [i.cpu().detach().numpy() for i in output_dict['correspondence_map_pyro']]
+            print("correspondence_map_pyro max min", correspondence_map_pyro[0].max(), correspondence_map_pyro[0].min())
+            file_path = Path(probe_save_location) / f"{os.path.basename(source_img_name)}_probe_output.pkl"
+            pickle.dump({
+                "source_image": source_image,
+                "target_image": target_image,
+                "correspondence_map_pyro": correspondence_map_pyro
+            }, open(file_path, "wb"))
+        print("correspondence_map_pyro", [i.shape for i in correspondence_map_pyro])
+
         # DEBUG grad flow #4
         # print("grad", proxy.param_layer.grad)
         # output
@@ -125,6 +147,7 @@ def train_epoch(net,
                 device,
                 epoch,
                 accum_loss,
+                start_iter,
                 criterion_grid,
                 criterion_matchability=None,
                 loss_grid_weights=None,
@@ -152,8 +175,9 @@ def train_epoch(net,
     if loss_grid_weights is None:
         loss_grid_weights = [1, 1, 1, 1, 1]
 
-    pbar = tqdm(enumerate(train_loader), total=len(train_loader))
+    pbar = tqdm(enumerate(train_loader, start = start_iter), total=len(train_loader))
     for i, mini_batch in pbar:
+        print(mini_batch)
         # create proxyopt optimizer
         proxy_gradient_to_log = None
         optimizer = Adam([proxy.param_layer], lr=proxydgc_config["learning_rate"])
@@ -301,6 +325,27 @@ def train_epoch(net,
                         proxydgc_log_writer.add_scalar("grad/" + param["name"], proxy_gradient_to_log[idx], n_iter)
                     idx += 1
             assert idx == len(denormalized_hypes)
+        if n_iter % proxydgc_config["save_hype_iter"] == 0:
+            print("Saving proxyopt checkpoint at iteration", n_iter)
+            proxyopt_checkpoint_path = Path("proxydgc_logs") / proxydgc_config["experiment_name"] / "checkpoints"
+            os.makedirs(proxyopt_checkpoint_path, exist_ok = True)
+            params = proxy.return_param_value()
+            lr_scheduler_state_dict = None
+            lr_scheduler_class = None
+            # if lr_scheduler is not None:
+            #     lr_scheduler_state_dict = self.lr_scheduler.state_dict()
+            #     lr_scheduler_class = self.lr_scheduler.__class__.__name__
+            checkpoint_path = str(proxyopt_checkpoint_path / f"checkpoint_{n_iter}.pkl")
+            with open(checkpoint_path, "wb") as f:
+                obj = {
+                    "proxy_hype":params,
+                    "lr_scheduler_state_dict": lr_scheduler_state_dict,
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "lr_scheduler_class": lr_scheduler_class,
+                    "optimizer_class": optimizer.state_dict(),
+                    "train_proxy_from_it": n_iter,
+                }
+                pickle.dump(obj, f)
         
     running_total_loss /= len(train_loader)
     return running_total_loss, accum_loss
@@ -314,6 +359,7 @@ def validate_epoch(net,
                    proxy,
                    device,
                    epoch,
+                   start_iter,
                    criterion_grid,
                    criterion_matchability=None,
                    loss_grid_weights=None,

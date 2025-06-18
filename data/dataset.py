@@ -458,7 +458,6 @@ class HomoAffTpsDataset(Dataset):
 
             # make arrays float tensor for subsequent processing
             # image = torch.Tensor(source_img.astype(np.float32))
-
             if image.numpy().ndim == 2:
                 image = \
                     torch.Tensor(np.dstack((source_img.astype(np.float32),
@@ -520,7 +519,9 @@ class HomoAffTpsDataset(Dataset):
             
             # substitute for cv2 resize
             img = source_img.unsqueeze(0)
+            print("source_img.shape", img.shape)
             _, _, H, W = img.shape
+            print("H, W", H, W)
             new_H = int(H * 1.2)
             new_W = int(W * 1.2)
             img_src_orig = F.interpolate(img, size=(new_H, new_W), mode='bilinear', align_corners=False)
@@ -529,13 +530,23 @@ class HomoAffTpsDataset(Dataset):
             # get a central crop:
             img_src_crop, x1_crop, y1_crop = center_crop_pytorch(img_src_orig,
                                                          self.W_OUT)
-
+            # img_src_origin = img_src_orig.permute(1, 2, 0).cpu().detach().numpy()  # [H, W, C]
+            # img_src_crop, x1_crop, y1_crop = center_crop(img_src_origin,
+            #                                     self.W_OUT)     
+            print("img_src_crop.shape", img_src_crop.shape)
+            print("x1_crop, y1_crop", x1_crop, y1_crop)
+            # exit(0)
             # Obtaining the full and crop grids out of H
             grid_full, grid_crop = self.get_grid(theta,
                                                  ccrop=(x1_crop, y1_crop))
 
             grid_full = grid_full.to(device)
             grid_crop = grid_crop.to(device)
+
+            print("grid_full.shape", grid_full.shape)
+            print("grid_crop.shape", grid_crop.shape)
+
+            # exit(0)
             # warp the fullsize original source image
             # img_src_orig = torch.Tensor(img_src_orig.astype(np.float32))
             # img_src_orig = img_src_orig.permute(2, 0, 1) # already in [C, H, W] format
@@ -553,7 +564,6 @@ class HomoAffTpsDataset(Dataset):
             print('Error: transformation type')
 
         if self.transforms is not None:
-            print("img_src_crop", img_src_crop.shape, img_src_crop.type)
             # exit(0)
             cropped_source_image = \
                 self.transforms(img_src_crop)

@@ -40,12 +40,12 @@ def load_proxy_model_and_dataset(proxydgc_config):
     openisp_config = yaml_dict["openisp_config"]
     hyp_setting = yaml_dict["hyp_setting"]
 
-    stage2_output_dir = Path("proxyopt_output") / proxydgc_config["experiment_name"]
+    stage2_output_dir = Path("proxydgc_logs") / proxydgc_config["experiment_name"]
 
     loaded_param_layer = None
     proxyopt_checkpoint_object = None
 
-    checkpoint_dir = stage2_output_dir / "proxyopt_checkpoints"
+    checkpoint_dir = stage2_output_dir / "checkpoints"
     if os.path.exists(checkpoint_dir):
         checkpoints = list(os.scandir(checkpoint_dir))
         checkpoints = sorted(checkpoints, key = lambda x: int(x.name.split("_")[-1].split(".")[0]))
@@ -175,14 +175,14 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    mean_vector = np.array([0.485, 0.456, 0.406])
-    std_vector = np.array([0.229, 0.224, 0.225])
-    normTransform = transforms.Normalize(mean_vector, std_vector)
-    dataset_transforms = transforms.Compose([
-            # transforms.ToTensor(),
-            normTransform
-        ])
-    # dataset_transforms = None
+    # mean_vector = np.array([0.485, 0.456, 0.406])
+    # std_vector = np.array([0.229, 0.224, 0.225])
+    # normTransform = transforms.Normalize(mean_vector, std_vector)
+    # dataset_transforms = transforms.Compose([
+    #         # transforms.ToTensor(),
+    #         normTransform
+    #     ])
+    dataset_transforms = None
 
     pyramid_param = [15, 30, 60, 120, 240]
     weights_loss_coeffs = [1, 1, 1, 1, 1]
@@ -287,7 +287,13 @@ if __name__ == "__main__":
     train_started = time.time()
 
     accum_loss = 0
-    for epoch in range(args.n_epoch):
+    start_ep = 0
+    start_iter = 0
+    if proxyopt_checkpoint is not None:
+        it = proxyopt_checkpoint["train_proxy_from_it"]
+        start_ep = it // (len(train_dataset) // args.batch_size)
+        start_iter = it % (len(train_dataset) // args.batch_size)
+    for epoch in range(start_ep, args.n_epoch):
         # scheduler.step()
         # Training one epoch
         train_loss, current_accum_loss = train_epoch(model,
@@ -299,6 +305,7 @@ if __name__ == "__main__":
                                  device,
                                  epoch,
                                  accum_loss,
+                                 start_iter,
                                  criterion_grid=criterion_grid,
                                  criterion_matchability=criterion_match,
                                  loss_grid_weights=weights_loss_coeffs)
@@ -315,6 +322,7 @@ if __name__ == "__main__":
                                        proxy,
                                        device,
                                        epoch,
+                                       start_iter,
                                        criterion_grid=criterion_grid,
                                        criterion_matchability=criterion_match,
                                        loss_grid_weights=weights_loss_coeffs)
@@ -323,8 +331,10 @@ if __name__ == "__main__":
         print(colored('==> ', 'blue') + 'epoch :', epoch + 1)
         val_losses.append(val_loss_grid)
 
-        np.save(osp.join(args.snapshots, cur_snapshot, 'logs.npy'),
-                [train_losses, val_losses])
+        start_iter = 0
+        # np.save(osp.join(args.snapshots, cur_snapshot, 'logs.npy'),
+        #         [train_losses, val_losses])
+
 
         # disable dgc-net snapshot saving
         # if epoch > args.start_epoch:
