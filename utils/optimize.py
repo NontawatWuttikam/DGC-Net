@@ -55,9 +55,9 @@ def collate_fn(batch):
     collated = {}
     if len(batch) == 0:
         return collated
-    
+
     keys = batch[0].keys()
-    
+
     for key in keys:
         if isinstance(batch[0][key], torch.Tensor):
             values = [sample[key] for sample in batch]
@@ -78,7 +78,7 @@ def collate_fn(batch):
         # else:
             # collated[key] = values  # e.g. list of strings, numbers, etc.
 
-    
+
     return collated
 
 def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, batch):
@@ -95,19 +95,19 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
                proxy,
                proxydgc_config
             )
-        
+
         # DEBUG grad flow #3
         # print("#3 grad", proxy.param_layer.grad)
         # image.sum().backward()
         # print("grad_after", proxy.param_layer.grad)
         # exit(0)
         # grad flow here
-        
+
         output_dict = dataset.process_sample(
             transform_type, image, theta
         )
 
-        probe_output = True
+        probe_output = False
         probe_save_location = "probe_output"
         if probe_output:
             source_image = (output_dict['source_image'].cpu().detach().permute(1, 2, 0) * 255.0).numpy().astype(np.uint8)
@@ -120,7 +120,7 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
                 "target_image": target_image,
                 "correspondence_map_pyro": correspondence_map_pyro
             }, open(file_path, "wb"))
-        print("correspondence_map_pyro", [i.shape for i in correspondence_map_pyro])
+        # print("correspondence_map_pyro", [i.shape for i in correspondence_map_pyro])
 
         # DEBUG grad flow #4
         # print("grad", proxy.param_layer.grad)
@@ -129,14 +129,14 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
         output_dicts.append(output_dict)
         proxy_output_images.append(proxy_output_image)
         bayers.append(bayer)
-    
+
     output = collate_fn(output_dicts)
     data = {
         "proxy_output_images": proxy_output_images
         , "bayers": bayers
     }
     return output, data
-        
+
 
 def train_epoch(net,
                 train_loader,
@@ -346,7 +346,7 @@ def train_epoch(net,
                     "train_proxy_from_it": n_iter,
                 }
                 pickle.dump(obj, f)
-        
+
     running_total_loss /= len(train_loader)
     return running_total_loss, accum_loss
 

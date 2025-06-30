@@ -237,11 +237,13 @@ class HomoAffTpsDataset(Dataset):
     """
 
     def __init__(self,
+                 proxydgc_config,
                  image_path,
                  csv_file,
                  transforms,
                  pyramid_param=[15, 30, 60, 120, 240],
-                 output_size=(240, 240)):
+                #  output_size=(240, 240)
+                 ):
         super().__init__()
         self.img_path = image_path
         self.transform_dict = {0: 'aff', 1: 'tps', 2: 'homo'}
@@ -250,8 +252,8 @@ class HomoAffTpsDataset(Dataset):
         self.df = pd.read_csv(csv_file)
 
         self.H_AFF_TPS, self.W_AFF_TPS = (480, 640)
-        self.H_HOMO, self.W_HOMO = (576, 768)
-        self.H_OUT, self.W_OUT = (output_size)
+        self.H_HOMO, self.W_HOMO = proxydgc_config["homoafftps_config"]["wh_homo"]
+        self.H_OUT, self.W_OUT = proxydgc_config["homoafftps_config"]["output_size"]
         self.THETA_IDENTITY = \
             torch.Tensor(np.expand_dims(np.array([[1, 0, 0],
                                                   [0, 1, 0]]),
@@ -335,6 +337,9 @@ class HomoAffTpsDataset(Dataset):
             2 * (Ywarp_crop - Y_crop.min()) / (Y_crop.max() - Y_crop.min()) - 1
         grid_crop = torch.stack([Xwarp_crop_range,
                                  Ywarp_crop_range], dim=-1)
+        # print("grid_full", grid_full.shape)
+        # print("grid_crop", grid_crop)
+        # exit(0)
         return grid_full.unsqueeze(0), grid_crop.unsqueeze(0)
 
     # def get_grid_torch(self, H: torch.Tensor, ccrop, device='cuda'):
@@ -448,10 +453,11 @@ class HomoAffTpsDataset(Dataset):
             'source_img_name': data.fname,
             'theta': theta,
         }
-    
+
     def process_sample(self, transform_type, source_img, theta, device="cuda"):
         if transform_type == 0 or transform_type == 1:
             raise Exception("this proxyopt experiment should have transform_type 2 (homography) only")
+            exit(0)
             # read image
             # source_img = cv2.cvtColor(source_img)
 
@@ -516,7 +522,7 @@ class HomoAffTpsDataset(Dataset):
             #                         fx=1.2,
             #                         fy=1.2,
             #                         interpolation=cv2.INTER_LINEAR)
-            
+
             # substitute for cv2 resize
             img = source_img.unsqueeze(0)
             print("source_img.shape", img.shape)
@@ -524,6 +530,7 @@ class HomoAffTpsDataset(Dataset):
             print("H, W", H, W)
             new_H = int(H * 1.2)
             new_W = int(W * 1.2)
+            print("new_H, new_W", new_H, new_W)
             img_src_orig = F.interpolate(img, size=(new_H, new_W), mode='bilinear', align_corners=False)
             img_src_orig = img_src_orig.squeeze(0)
 
@@ -532,7 +539,7 @@ class HomoAffTpsDataset(Dataset):
                                                          self.W_OUT)
             # img_src_origin = img_src_orig.permute(1, 2, 0).cpu().detach().numpy()  # [H, W, C]
             # img_src_crop, x1_crop, y1_crop = center_crop(img_src_origin,
-            #                                     self.W_OUT)     
+            #                                     self.W_OUT)
             print("img_src_crop.shape", img_src_crop.shape)
             print("x1_crop, y1_crop", x1_crop, y1_crop)
             # exit(0)
@@ -617,6 +624,9 @@ class HomoAffTpsDataset(Dataset):
                 mask_x.append(mask[:, :, 0])
                 mask_y.append(mask[:, :, 1])
 
+        print(cropped_source_image.shape)
+        print(grid_pyramid[-1].shape)
+        # exit(0)
         return {'source_image': cropped_source_image,
                 'target_image': cropped_target_image,
                 'correspondence_map_pyro': grid_pyramid,

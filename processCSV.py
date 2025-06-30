@@ -2,6 +2,8 @@ import pandas as pd
 from pathlib import Path
 import argparse
 import yaml
+import itertools
+
 def main():
     parser = argparse.ArgumentParser(description="Generate CSV with matched target image paths.")
     parser.add_argument("--csv-path", type=str, required=True, help="Path to input CSV file.")
@@ -19,16 +21,17 @@ def main():
 
     # Find all .dng files
     target_image_paths = list(raw_dir.rglob("*.dng"))
+    if len(target_image_paths) == 0:
+        raise ValueError(f"No .dng files found in {raw_dir}")
 
     # Filter only "homo" entries
-    df = df[df["aff/tps/homo"] == 2]
+    df = df[df["aff/tps/homo"] == 2].reset_index(drop=True)
 
-    # Sample same number as available .dngs
-    df = df.sample(len(target_image_paths), random_state=args.seed)
+    # Repeat the image paths to match the number of rows in the filtered DataFrame
+    repeated_paths = list(itertools.islice(itertools.cycle(target_image_paths), len(df)))
 
     # Update fname column with relative paths
-    for j, i in enumerate(df.index):
-        df.at[i, "fname"] = str(target_image_paths[j]).split("data/")[-1]
+    df["fname"] = [str(p).split("data/")[-1] for p in repeated_paths]
 
     # Construct output filename using raw dir name
     output_csv = csv_path.with_name(f"homo_aff_tps_train_{raw_dir_name}.csv")

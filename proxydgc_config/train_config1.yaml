@@ -1,16 +1,27 @@
-experiment_name: 'proxydgc_train1'
+experiment_name: 'train_lowlight_pooled480x640_gradac1_allHomoRepeatedRaw_standardize'
 config_path: '/home/boat/proxyISP/ProxyOpt/train_configs/v16.1.yaml'
-target_images: /mnt/ssd2tb/boat/thesis/s21fe_dataset/raw_edgeContrastIndex_top100
+# target_images: /mnt/ssd2tb/boat/thesis/s21fe_dataset/raw_edgeContrastIndex_top100
+# target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/well-lit'
+target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/low-light'
+pretrained: '/home/boat/proxyISP/DGC-Net/model/pretrained_models/dgc/checkpoint.pth'
+epochs: 10000000
 batch_size: 1
+grad_ac_step: 1
+standardize: True
+homoafftps_config:
+    wh_homo: [576, 768]
+    # wh_homo: [288, 288]
+    output_size: [240, 240]
 pooling:
     enable: True
     # pooled_size: [240, 320]
     pooled_size: [480, 640] # dont change, affect dense grid estimation in ground truth gebneration (default in dataset.py: [480, 640])
+    # pooled_size: [240, 240]
     # pooled_size: [576, 768]
     # pooled_size: [32,32]
 # learning_rate: 0.0005
 learning_rate: 0.0005 # 0.0005 x gradac=8
-save_image_iter: 100
+save_image_iter: 1000
 log_param_iter: 1
 save_hype_iter: 100
 lr_scheduler_iter: 1
@@ -18,16 +29,13 @@ scheduler: None
 scheduler_param:
     final_lr: 0.00005
     total_steps: 5000
-grad_ac_step: 1
-
-train_iter: 200000000000 # 170000
+# train_iter: 200000000000 # 170000
 
 # turn off sp val and log - BOAT
-validation_interval: 200000000000 # 2000
-tensorboard_interval: 2000000000000 # 200
-save_interval: 20000000000000 # 2000
-validation_size: 5
+# validation_interval: 200000000000 # 2000
+# tensorboard_interval: 2000000000000 # 200
+# save_interval: 20000000000000 # 2000
+# validation_size: 5
 
-pretrained: '/home/boat/proxyISP/DGC-Net/model/pretrained_models/dgc/checkpoint.pth'
 
 

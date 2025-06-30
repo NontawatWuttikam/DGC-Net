@@ -32,7 +32,7 @@ from tensorboardX import SummaryWriter
 
 def load_proxy_model_and_dataset(proxydgc_config):
     PROXYOPT_BASE_PATH = Path("/home/boat/proxyISP/ProxyOpt/")
-    print("proxydgc_config", proxydgc_config)    
+    print("proxydgc_config", proxydgc_config)
     with open(proxydgc_config["config_path"], "r") as f:
         yaml_dict = yaml.safe_load(f)
 
@@ -146,8 +146,6 @@ if __name__ == "__main__":
                         default=0.9, help='momentum constant')
     parser.add_argument('--start_epoch', type=int, default=-1,
                         help='start epoch')
-    parser.add_argument('--n_epoch', type=int, default=70,
-                        help='number of training epochs')
     parser.add_argument('--batch-size', type=int, default=32,
                         help='training batch size')
     parser.add_argument('--n_threads', type=int, default=8,
@@ -175,15 +173,6 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # mean_vector = np.array([0.485, 0.456, 0.406])
-    # std_vector = np.array([0.229, 0.224, 0.225])
-    # normTransform = transforms.Normalize(mean_vector, std_vector)
-    # dataset_transforms = transforms.Compose([
-    #         # transforms.ToTensor(),
-    #         normTransform
-    #     ])
-    dataset_transforms = None
-
     pyramid_param = [15, 30, 60, 120, 240]
     weights_loss_coeffs = [1, 1, 1, 1, 1]
     weights_loss_feat = [1, 1, 1, 1]
@@ -201,7 +190,7 @@ if __name__ == "__main__":
             csv_file_test = args.csv_path_test
         else:
             raise Exception("Train csv path is provided but test is not")
-    
+
     proxydgc_config = None
     with open(args.proxydgc_config, "r") as f:
         proxydgc_config = yaml.safe_load(f)
@@ -212,18 +201,33 @@ if __name__ == "__main__":
 
     if not os.path.exists(proxydgc_log_path):
         os.makedirs(proxydgc_log_path)
-    
+
+    with open(proxydgc_log_path / "proxydgc_config.yaml", "w") as f:
+        yaml.dump(proxydgc_config, f, default_flow_style=False)
+
     # create tensorbaord instance
     proxydgc_log_writer = SummaryWriter(str(proxydgc_log_path / "logs"))
 
+    dataset_transforms = None
+    if proxydgc_config["standardize"]:
+        mean_vector = np.array([0.485, 0.456, 0.406])
+        std_vector = np.array([0.229, 0.224, 0.225])
+        normTransform = transforms.Normalize(mean_vector, std_vector)
+        dataset_transforms = transforms.Compose([
+                # transforms.ToTensor(),
+                normTransform
+            ])
+
     train_dataset = \
-        HomoAffTpsDataset(image_path=args.image_data_path,
+        HomoAffTpsDataset(proxydgc_config=proxydgc_config,
+                            image_path=args.image_data_path,
                           csv_file=csv_file_train,
                           transforms=dataset_transforms,
                           pyramid_param=pyramid_param)
 
     val_dataset = \
-        HomoAffTpsDataset(image_path=args.image_data_path,
+        HomoAffTpsDataset(proxydgc_config=proxydgc_config,
+                          image_path=args.image_data_path,
                           csv_file=csv_file_test,
                           transforms=dataset_transforms,
                           pyramid_param=pyramid_param)
@@ -293,7 +297,7 @@ if __name__ == "__main__":
         it = proxyopt_checkpoint["train_proxy_from_it"]
         start_ep = it // (len(train_dataset) // args.batch_size)
         start_iter = it % (len(train_dataset) // args.batch_size)
-    for epoch in range(start_ep, args.n_epoch):
+    for epoch in range(start_ep, proxydgc_config["epochs"]):
         # scheduler.step()
         # Training one epoch
         train_loss, current_accum_loss = train_epoch(model,
@@ -313,23 +317,23 @@ if __name__ == "__main__":
         accum_loss = current_accum_loss
         print(colored('==> ', 'green') + 'Train average loss:', train_loss)
 
-        # Validation
-        val_loss_grid = validate_epoch(model,
-                                       val_dataloader,
-                                       proxy_isp_dataset,
-                                       proxydgc_config,
-                                       proxydgc_log_writer,
-                                       proxy,
-                                       device,
-                                       epoch,
-                                       start_iter,
-                                       criterion_grid=criterion_grid,
-                                       criterion_matchability=criterion_match,
-                                       loss_grid_weights=weights_loss_coeffs)
-        print(colored('==> ', 'blue') + 'Val average grid loss :',
-              val_loss_grid)
-        print(colored('==> ', 'blue') + 'epoch :', epoch + 1)
-        val_losses.append(val_loss_grid)
+        # # Validation
+        # val_loss_grid = validate_epoch(model,
+        #                                val_dataloader,
+        #                                proxy_isp_dataset,
+        #                                proxydgc_config,
+        #                                proxydgc_log_writer,
+        #                                proxy,
+        #                                device,
+        #                                epoch,
+        #                                start_iter,
+        #                                criterion_grid=criterion_grid,
+        #                                criterion_matchability=criterion_match,
+        #                                loss_grid_weights=weights_loss_coeffs)
+        # print(colored('==> ', 'blue') + 'Val average grid loss :',
+        #       val_loss_grid)
+        # print(colored('==> ', 'blue') + 'epoch :', epoch + 1)
+        # val_losses.append(val_loss_grid)
 
         start_iter = 0
         # np.save(osp.join(args.snapshots, cur_snapshot, 'logs.npy'),

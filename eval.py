@@ -22,6 +22,8 @@ parser = argparse.ArgumentParser(description='DGC-Net')
 # Paths
 parser.add_argument('--csv-path', type=str, default='data/csv',
                     help='path to training transformation csv folder')
+parser.add_argument('--output-dir', type=str,
+                    help='output directory to save results')
 parser.add_argument('--image-data-path', type=str,
                     default='data/hpatches-geometry',
                     help='path to folder containing training images')
@@ -32,7 +34,7 @@ parser.add_argument('--metric', type=str, default='aepe',
 parser.add_argument('--batch-size', type=int, default=1,
                     help='evaluation batch size')
 parser.add_argument('--seed', type=int, default=1984, help='Pseudo-RNG seed')
-
+parser.add_argument('--pretrained', type=str, default=None, help='.pth file to load pretrained model')
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -46,9 +48,16 @@ dataset_transforms = transforms.Compose([
         transforms.ToTensor(),
         normTransform
     ])
+# dataset_transforms = None
 
 # Model
-checkpoint_fname = osp.join('pretrained_models', args.model, 'checkpoint.pth')
+checkpoint_fname = None
+if args.pretrained is not None:
+    checkpoint_fname = args.pretrained
+
+assert checkpoint_fname is not None, 'Please provide a pretrained model path with --pretrained'
+
+print('Loading model from: {}'.format(checkpoint_fname))
 if not osp.isfile(checkpoint_fname):
     raise ValueError('check the snapshots path')
 
@@ -101,3 +110,13 @@ with torch.no_grad():
                                                        alpha=threshold)
 
     print(res)
+
+    # save to file
+    if not osp.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+
+    res_filename = osp.join(args.output_dir, args.metric + '.npy')
+    np.save(res_filename, np.array(res))
+
+    print('Results saved to: {}'.format(res_filename))
+
