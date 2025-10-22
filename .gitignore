@@ -8,5 +8,7 @@ pretrained_models/
 data/tinyTimeMachine/*
 model/pretrained_models/
 proxydgc_logs/*
+proxydgc_eval/*
+figures/*
 probe_output/*
 probed_data_viz/*

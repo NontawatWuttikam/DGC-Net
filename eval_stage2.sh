@@ -1,16 +1,17 @@
 #!/bin/bash
 
 # proxyopt config path
-proxyoptConfig="../ProxyOpt/train_configs/v16.1.yaml"
+proxyoptConfig="/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml"
 pretrained="model/pretrained_models/dgc/checkpoint.pth"
 # optimized hype path, specify "original" if wanted original hype rather than optimized hype according to proxyopt config file.
-stage2Checkpoint="original"
+stage2Checkpoint="/home/boat/proxyISP/DGC-Net/proxydgc_logs/train_v16.2-chroma-sunlit_pooled480x640_allHomoRepeatedRaw_standardize_gradac8/checkpoints/checkpoint_10000.pkl"
 # stage2Checkpoint="original"
-extraSuffix=""
+extraSuffix="_HpatchesV4"
 gpu_devices="0"
 hpatchesSeqPrefix="sl" # ll, wl, sl
-metrics=("aepe" "pck")
+metrics=("aepe") # "aepe" "pck"
 
+PreHPatchesPath="/mnt/ssd2tb/boat/thesis/s21fe_hpatches_v4"
 HPatchesBasePath="/home/boat/proxyISP/pytorch-superpoint/datasets"  # Adjust this path as needed
 superpointBasePath="/home/boat/proxyISP/pytorch-superpoint"
 csvDir="data/csv"
@@ -40,7 +41,7 @@ rm -rf "$HPatchesBasePath/HPatches"
 # Activate environment and run hpatches generation
 conda activate proxyopt
 cd "$superpointBasePath"
-python make_hpatches.py "$proxyoptConfig" "$stage2Checkpoint" "$hpatchesSeqPrefix"
+python make_hpatches.py "$proxyoptConfig" "$stage2Checkpoint" "$hpatchesSeqPrefix" "$PreHPatchesPath"
 conda deactivate
 
 conda activate dgcnet
@@ -53,7 +54,7 @@ python make_hpatches_csv.py "$HPatchesBasePath/HPatches" "$csvDir/proxyopt_hpatc
 # for metric in "aepe" "pck"; do
 for metric in "${metrics[@]}"; do
     echo "Evaluating with metric: $metric"
-    python eval.py \
+    CUDA_VISIBLE_DEVICES="$gpu_devices" python eval.py \
         --image-data-path "$HPatchesBasePath/HPatches" \
         --csv-path "$csvDir/proxyopt_hpatches" \
         --pretrained "$pretrained" \

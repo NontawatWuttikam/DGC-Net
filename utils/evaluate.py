@@ -48,6 +48,7 @@ def calculate_epe_hpatches(net, val_loader, device, img_size=240):
         aepe_array: averaged EPE for the whole sequence of HPatches
     """
     aepe_array = []
+    sequence_names = []
     n_registered_pxs = 0
 
     pbar = tqdm(enumerate(val_loader), total=len(val_loader))
@@ -92,9 +93,11 @@ def calculate_epe_hpatches(net, val_loader, device, img_size=240):
         # let's calculate EPE
         aepe = epe(flow_est, flow_target)
         aepe_array.append(aepe.item())
+        assert len(mini_batch["sequence_name"]) == 1 # batch size = 1
+        sequence_names.append(mini_batch["sequence_name"][0])
         n_registered_pxs += flow_target.shape[0]
 
-    return aepe_array
+    return aepe_array, sequence_names
 
 
 def calculate_pck_hpatches(net, val_loader, device, alpha=1, img_size=240):

@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
+import csv
 
 import argparse
 import time
@@ -77,6 +78,7 @@ with torch.no_grad():
     number_of_scenes = 5
     if (args.metric == 'aepe'):
         res = []
+        res_lists = []
         jac = []
     if (args.metric == 'pck'):
         # create a threshold range
@@ -97,10 +99,12 @@ with torch.no_grad():
                                      num_workers=4)
 
         if (args.metric == 'aepe'):
-            epe_arr = calculate_epe_hpatches(net,
+            epe_arr, sequence_names = calculate_epe_hpatches(net,
                                              test_dataloader,
                                              device)
             res.append(np.mean(epe_arr))
+            res_list = [[seq_name,k, epe] for seq_name, epe in zip(sequence_names, epe_arr)]
+            res_lists.extend(res_list)
 
         if (args.metric == 'pck'):
             for t_id, threshold in enumerate(threshold_range):
@@ -110,6 +114,7 @@ with torch.no_grad():
                                                        alpha=threshold)
 
     print(res)
+    print(res_lists)
 
     # save to file
     if not osp.exists(args.output_dir):
@@ -117,6 +122,17 @@ with torch.no_grad():
 
     res_filename = osp.join(args.output_dir, args.metric + '.npy')
     np.save(res_filename, np.array(res))
+
+    res_list_sorted = sorted(res_lists, key=lambda x: x[2])
+
+    csv_columns = ['Sequence Name', 'Viewpoint', 'EPE']
+
+    # Write to CSV
+    csv_file = osp.join(args.output_dir, args.metric + '_list.csv')
+    with open(csv_file, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(csv_columns)
+        writer.writerows(res_list_sorted)
 
     print('Results saved to: {}'.format(res_filename))
 

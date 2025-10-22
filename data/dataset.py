@@ -122,6 +122,7 @@ class HPatchesDataset(Dataset):
 
     def __getitem__(self, idx):
         data = self.df.iloc[idx]
+        seq_name = data[0]
         obj = str(data.obj)
         im1_id, im2_id = str(data.im1), str(data.im2)
         h_scale, w_scale = self.image_size[0], self.image_size[1]
@@ -212,6 +213,7 @@ class HPatchesDataset(Dataset):
         return {'source_image': img1,
                 'target_image': img2,
                 'correspondence_map': grid_gt,
+                'sequence_name': seq_name,
                 'mask': mask.long()}
 
 
