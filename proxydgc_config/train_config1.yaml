@@ -1,4 +1,4 @@
-experiment_name: 'train_v16.2-chroma-hpatchesv4_pooled480x640_allHomoRepeatedRaw_standardize_gradac8'
+experiment_name: 'train_v16.2-chroma-HumanTunedInitialHype_hpatchesv4_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac102'
 # config_path: '/home/boat/proxyISP/ProxyOpt/train_configs/v16.1.yaml'
 config_path: '/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml'
 # target_images: /mnt/ssd2tb/boat/thesis/s21fe_dataset/raw_edgeContrastIndex_top100
@@ -7,9 +7,10 @@ config_path: '/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTuned
 target_images: '/mnt/ssd2tb/boat/thesis/s21fe_hpatches_v4'
 # target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/low-light'
 pretrained: '/home/boat/proxyISP/DGC-Net/model/pretrained_models/dgc/checkpoint.pth'
+# optimization_method: 'cmaes' #STILL UNUSED!! # proxy, cmaes
 epochs: 10000000
 batch_size: 1
-grad_ac_step: 8
+grad_ac_step: 102
 standardize: True
 homoafftps_config:
     wh_homo: [576, 768]
@@ -23,7 +24,7 @@ pooling:
     # pooled_size: [576, 768]
     # pooled_size: [32,32]
 # learning_rate: 0.0005
-learning_rate: 0.001 # 0.0005 x gradac=8
+learning_rate: 0.0005 # 0.0005 x gradac=8
 save_image_iter: 1000
 log_param_iter: 1
 save_hype_iter: 100

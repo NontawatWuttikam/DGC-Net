@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # proxyopt config path
-proxyoptConfig="/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml"
+proxyoptConfig="/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml"
 pretrained="model/pretrained_models/dgc/checkpoint.pth"
 # optimized hype path, specify "original" if wanted original hype rather than optimized hype according to proxyopt config file.
-stage2Checkpoint="/home/boat/proxyISP/DGC-Net/proxydgc_logs/train_v16.2-chroma-sunlit_pooled480x640_allHomoRepeatedRaw_standardize_gradac8/checkpoints/checkpoint_10000.pkl"
-# stage2Checkpoint="original"
+# stage2Checkpoint="/home/boat/proxyISP/DGC-Net/proxydgc_logs/train_v16.2-chroma-HumanTunedInitialHype_hpatchesv4_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac102/checkpoints/checkpoint_525900.pkl"
+stage2Checkpoint="original"
 extraSuffix="_HpatchesV4"
 gpu_devices="0"
 hpatchesSeqPrefix="sl" # ll, wl, sl
