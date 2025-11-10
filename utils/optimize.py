@@ -194,7 +194,7 @@ def train_epoch(net,
             mini_batch
         )
 
-        optimizer.zero_grad()
+        # optimizer.zero_grad()
 
         # DEBUG grad flow #2
         # print("#2 grad", proxy.param_layer.grad)
@@ -270,7 +270,8 @@ def train_epoch(net,
             proxy_gradient_to_log = proxy.param_layer.grad.cpu().detach().numpy()
             optimizer.step()
             optimizer.zero_grad()
-            proxy.update_param()
+            categorical_ids = proxy_isp_dataset.get_categorical_ids()
+            proxy.update_param(categorical_ids=categorical_ids)
 
             proxydgc_log_writer.add_scalar("Loss/accum_Loss", accum_loss, n_iter)
             accum_loss = 0
@@ -316,11 +317,13 @@ def train_epoch(net,
                     for bin in range(param["values"].__len__()):
                         bin_name = param["values"][bin]
                         proxydgc_log_writer.add_scalar("ISP_hyperparameters/" + param["name"]+f"|{bin_name}", denormalized_hypes[idx], n_iter)
+                        proxydgc_log_writer.add_scalar("ISP_hyperparameters_raw_from_proxy/" + param["name"]+f"|{bin_name}", proxy.return_param_value()[idx], n_iter)
                         if proxy_gradient_to_log is not None:
                             proxydgc_log_writer.add_scalar("grad/" + param["name"]+f"|{bin_name}", proxy_gradient_to_log[idx], n_iter)
                         idx += 1
                 else:
                     proxydgc_log_writer.add_scalar("ISP_hyperparameters/" + param["name"], denormalized_hypes[idx], n_iter)
+                    proxydgc_log_writer.add_scalar("ISP_hyperparameters_raw_from_proxy/" + param["name"], proxy.return_param_value()[idx], n_iter)
                     if proxy_gradient_to_log is not None:
                         proxydgc_log_writer.add_scalar("grad/" + param["name"], proxy_gradient_to_log[idx], n_iter)
                     idx += 1
