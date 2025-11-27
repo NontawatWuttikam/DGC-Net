@@ -5,7 +5,7 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 import rawpy
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 import pickle
 import os
 from pathlib import Path
@@ -180,7 +180,10 @@ def train_epoch(net,
         print(mini_batch)
         # create proxyopt optimizer
         proxy_gradient_to_log = None
-        optimizer = Adam([proxy.param_layer], lr=proxydgc_config["learning_rate"])
+        if proxydgc_config["optimizer"] == "Adam":
+            optimizer = Adam([proxy.param_layer], lr=proxydgc_config["learning_rate"])
+        elif proxydgc_config["optimizer"] == "SGD":
+            optimizer = SGD([proxy.param_layer], lr=proxydgc_config["learning_rate"])
         learning_rate = proxydgc_config["learning_rate"]
 
         n_iter = epoch * len(train_loader) + i

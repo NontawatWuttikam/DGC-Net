@@ -4,8 +4,10 @@
 proxyoptConfig="/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml"
 pretrained="model/pretrained_models/dgc/checkpoint.pth"
 # optimized hype path, specify "original" if wanted original hype rather than optimized hype according to proxyopt config file.
-# stage2Checkpoint="/home/boat/proxyISP/DGC-Net/proxydgc_logs/train_v16.2-chroma-HumanTunedInitialHype_hpatchesv4_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac102/checkpoints/checkpoint_525900.pkl"
-stage2Checkpoint="original"
+# stage2Checkpoint="/home/boat/proxyISP/DGC-Net/proxydgc_logs/FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_sunlit_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32/checkpoints/checkpoint_105000.pkl"
+# stage2Checkpoint="original"
+# stage2Checkpoint="/home/boat/proxyISP/ProxyOpt/replication_adjusted/v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_lowlight_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8/original_color_hype/checkpoint_45000.pkl"
+stage2Checkpoint="/home/boat/proxyISP/ProxyOpt/replication_output/v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_sunlit_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8/checkpoints/checkpoint_120000.pkl"
 extraSuffix="_HpatchesV4"
 gpu_devices="0"
 hpatchesSeqPrefix="sl" # ll, wl, sl

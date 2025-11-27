@@ -1,6 +1,6 @@
 #!/bin/bash
-start_number=0
-end_number=800000
+start_number=100000
+end_number=200000
 step_size=1000
 
 echo "Running evaluation sweep from checkpoint $start_number to $end_number with step size $step_size"
@@ -9,7 +9,7 @@ echo "Running evaluation sweep from checkpoint $start_number to $end_number with
 proxyoptConfig="/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml"
 pretrained="model/pretrained_models/dgc/checkpoint.pth"
 # Base path for checkpoints
-stage2CheckpointBase="/home/boat/proxyISP/DGC-Net/proxydgc_logs/train_v16.2-chroma-hpatchesv4_pooled480x640_allHomoRepeatedRaw_standardize_gradac8/checkpoints"
+stage2CheckpointBase="/home/boat/proxyISP/DGC-Net/proxydgc_logs/FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_sunlit_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32/checkpoints"
 # stage2Checkpoint="original"
 extraSuffix="_HpatchesV4"
 gpu_devices="0"
