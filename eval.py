@@ -114,7 +114,6 @@ with torch.no_grad():
                                                        alpha=threshold)
 
     print(res)
-    print(res_lists)
 
     # save to file
     if not osp.exists(args.output_dir):
@@ -123,16 +122,18 @@ with torch.no_grad():
     res_filename = osp.join(args.output_dir, args.metric + '.npy')
     np.save(res_filename, np.array(res))
 
-    res_list_sorted = sorted(res_lists, key=lambda x: x[2])
+    if (args.metric == 'aepe'):
+        print(res_lists)
+        res_list_sorted = sorted(res_lists, key=lambda x: x[2])
 
-    csv_columns = ['Sequence Name', 'Viewpoint', 'EPE']
+        csv_columns = ['Sequence Name', 'Viewpoint', 'EPE']
 
-    # Write to CSV
-    csv_file = osp.join(args.output_dir, args.metric + '_list.csv')
-    with open(csv_file, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(csv_columns)
-        writer.writerows(res_list_sorted)
+        # Write to CSV
+        csv_file = osp.join(args.output_dir, args.metric + '_list.csv')
+        with open(csv_file, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(csv_columns)
+            writer.writerows(res_list_sorted)
 
     print('Results saved to: {}'.format(res_filename))
 

@@ -3,14 +3,15 @@
 # Default pretrained and GPU
 pretrained="model/pretrained_models/dgc/checkpoint.pth"
 gpu_devices="0"
-metrics=("aepe") # "aepe" "pck"
+metrics=("aepe" "pck") # "aepe" "pck"
 
 # Paths
-PreHPatchesPath="/mnt/ssd2tb/boat/thesis/s21fe_hpatches_v4"
+PreHPatchesPath="/mnt/ssd2tb/boat/thesis/s21fe_hpatches_v4.1"
 HPatchesBasePath="/home/boat/proxyISP/pytorch-superpoint/datasets"  # Adjust this path as needed
 superpointBasePath="/home/boat/proxyISP/pytorch-superpoint"
+HPatchesCacheRoot="/home/boat/proxyISP/pytorch-superpoint/datasets/HPatches_caches_DGC"
 csvDir="data/csv"
-extraSuffix="_HpatchesV4"
+extraSuffix="_HpatchesV4.1"
 
 # Activate conda
 source ~/miniconda3/etc/profile.d/conda.sh
@@ -19,19 +20,23 @@ currentDir=$(pwd)
 # List of checkpoints with individual config and prefix
 # Format: "checkpoint_path proxyoptConfig hpatchesSeqPrefix"
 checkpoints=(
-    "original /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml sl"
-    "original /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml ll"
-    "/home/boat/proxyISP/ProxyOpt/replication_output/v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_sunlit_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8/checkpoints/checkpoint_120000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml sl"
-    "/home/boat/proxyISP/ProxyOpt/replication_adjusted/v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_lowlight_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8/original_color_hype/checkpoint_45000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml ll"
-    "/home/boat/proxyISP/DGC-Net/proxydgc_logs/FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_sunlit_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32/checkpoints/checkpoint_105000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml sl"
-    "/home/boat/proxyISP/DGC-Net/proxydgc_logs/FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32/checkpoints/checkpoint_123000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml ll"
+    # "original /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml sl"
+    # "original /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml ll"
+
+    # "/home/boat/proxyISP/ProxyOpt/replication_output/v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_sunlit_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8/checkpoints/checkpoint_120000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml sl"
+    # "/home/boat/proxyISP/ProxyOpt/v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_sunlit_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_adjust_defaultcolorhuesat/checkpoints/checkpoint_120000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml sl"
+    # "/home/boat/proxyISP/ProxyOpt/replication_output/v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_sunlit_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_adjust_denoise3/checkpoints/checkpoint_120000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml ll"
+    "/home/boat/proxyISP/ProxyOpt/v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_lowlight_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_adjust_defaultcolorhuesat_denoise/checkpoints/checkpoint_45000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-ISPDefaultInitialHype.yaml ll"
+
+    # "/home/boat/proxyISP/DGC-Net/proxydgc_logs/FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_sunlit_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32/checkpoints/checkpoint_105000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml sl"
+    # "/home/boat/proxyISP/DGC-Net/proxydgc_logs/FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32/checkpoints/checkpoint_123000.pkl /home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml ll"
 )
 
 # Loop over each checkpoint
 for entry in "${checkpoints[@]}"; do
     # Split entry into variables
     IFS=' ' read -r stage2Checkpoint proxyoptConfig hpatchesSeqPrefix <<< "$entry"
-    
+
     echo "Processing checkpoint: $stage2Checkpoint"
     echo "Using config: $proxyoptConfig"
     echo "HPatches prefix: $hpatchesSeqPrefix"
@@ -57,6 +62,17 @@ for entry in "${checkpoints[@]}"; do
     cd "$superpointBasePath"
     python make_hpatches.py "$proxyoptConfig" "$stage2Checkpoint" "$hpatchesSeqPrefix" "$PreHPatchesPath"
     conda deactivate
+
+    # Cache generated HPatches for DGC-Net
+    mkdir -p "$HPatchesCacheRoot"
+
+    cacheDest="$HPatchesCacheRoot/$dataName"
+    echo "Caching HPatches to: $cacheDest"
+
+    # Remove existing cache if present (optional but safer)
+    rm -rf "$cacheDest"
+
+    cp -a "$HPatchesBasePath/HPatches" "$cacheDest"
 
     # Make CSV
     conda activate dgcnet

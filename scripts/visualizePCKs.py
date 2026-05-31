@@ -3,18 +3,63 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Set the output filename
-output_file = 'comparison_pck_plot.png'
+output_file = 'comparison_pck_plot_wl_HPatchesV4.1.png'
 
 # Define evaluation configurations
 evals = [
+    # {
+    #     "path": "proxydgc_eval/eval_sl_v16.2-chroma-ISPDefaultInitialHype_original_HpatchesV4",
+    #     "label": "Original Well-lit"
+    # },
+    # {
+    #     "path": "proxydgc_eval/eval_sl_v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_sunlit_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_120000_HpatchesV4",
+    #     "label": "Visual-Optimized Well-lit"
+    # },
+    # {
+    #     "path": "proxydgc_eval/eval_sl_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_sunlit_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32_105000_HpatchesV4",
+    #     "label": "Feature-Optimized Well-lit"
+    # },
+    # {
+    #     "path": "proxydgc_eval/eval_ll_v16.2-chroma-ISPDefaultInitialHype_original_HpatchesV4",
+    #     "label": "Original Low-light"
+    # },
+    # {
+    #     "path": "proxydgc_eval/eval_ll_v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_lowlight_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_45000_HpatchesV4",
+    #     "label": "Visual-Optimized Low-light"
+    # },
+    # {
+    #     "path": "proxydgc_eval/eval_ll_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32_123000_HpatchesV4",
+    #     "label": "Feature-Optimized Low-light"
+    # },
+
+    # HpatchesV4.1 ll
+    # {
+    #     "path": "proxydgc_eval/eval_ll_v16.2-chroma-ISPDefaultInitialHype_original_HpatchesV4.1",
+    #     "label": "Original Low-light"
+    # },
+    # {
+    #     "path": "/home/boat/proxyISP/DGC-Net/proxydgc_eval/eval_ll_v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_lowlight_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_adjust_defaultcolorhuesat_denoise_45000_HpatchesV4.1",
+    #     "label": "Visual-Optimized Low-light"
+    # },
+    # {
+    #     "path": "proxydgc_eval/eval_ll_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32_123000_HpatchesV4.1",
+    #     "label": "Feature-Optimized Low-light"
+    # },
+
     {
-        "path": "proxydgc_eval/eval_sl_v16.1_original",
-        "label": "Original Hype"
+        "path": "proxydgc_eval/eval_sl_v16.2-chroma-ISPDefaultInitialHype_original_HpatchesV4.1",
+        "label": "Original Well-lit"
     },
     {
-        "path": "proxydgc_eval/eval_sl_train_sunlit_pooled480x640_gradac1_allHomoRepeatedRaw_standardize_130000",
-        "label": "Optimized Sunlit"
-    }
+        "path": "/home/boat/proxyISP/DGC-Net/proxydgc_eval/eval_sl_v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_sunlit_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_adjust_defaultcolorhuesat_120000_HpatchesV4.1",
+        "label": "Visual-Optimized Well-lit"
+    },
+    {
+        "path": "proxydgc_eval/eval_sl_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_sunlit_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32_105000_HpatchesV4.1",
+        "label": "Feature-Optimized Well-lit"
+    },
+    
+    
 ]
 
 # Initialize lists
@@ -45,21 +90,28 @@ if not pck_list:
     exit()
 
 # Plotting
-fig, axes = plt.subplots(1, 5, figsize=(20,5), sharex=True)
+fig, axes = plt.subplots(1, 5, figsize=(20,3), sharex=True, sharey=True)
 x = np.arange(200)
+# set font to times new roman
+plt.rcParams["font.family"] = "serif"
+plt.rcParams["font.serif"] = ["Times New Roman"]
+
+# change font of ticks to times new roman
+for ax in axes:
+    for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+        label.set_fontname("Times New Roman")
 
 for i in range(5):
     ax = axes[i]
     for pck, label in zip(pck_list, labels):
         ax.plot(x, pck[i], label=label)
-    title = f"H-1-{i+2}"
-    ax.set_title(title)
-    ax.set_ylabel('PCK')
-    ax.set_xlabel('threshold')
+    title = f"Viewpoint {i+1}"
+    ax.set_title(title, fontname="Times New Roman")
+    ax.set_ylabel('PCK', fontname="Times New Roman")
+    ax.set_xlabel('threshold', fontname="Times New Roman")
     ax.grid(True)
-    ax.legend(loc='best', fontsize='small')
+    ax.legend(loc='lower right')
 
-axes[-1].set_xlabel('Frame Index')
 plt.tight_layout()
 plt.savefig(output_file, dpi=300)
 print(f"Figure saved to {output_file}")

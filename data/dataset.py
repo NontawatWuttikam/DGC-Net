@@ -256,6 +256,7 @@ class HomoAffTpsDataset(Dataset):
         self.H_AFF_TPS, self.W_AFF_TPS = (480, 640)
         self.H_HOMO, self.W_HOMO = proxydgc_config["homoafftps_config"]["wh_homo"]
         self.H_OUT, self.W_OUT = proxydgc_config["homoafftps_config"]["output_size"]
+        self.proxydgc_config = proxydgc_config
         self.THETA_IDENTITY = \
             torch.Tensor(np.expand_dims(np.array([[1, 0, 0],
                                                   [0, 1, 0]]),
@@ -581,6 +582,20 @@ class HomoAffTpsDataset(Dataset):
         else:
             cropped_source_image = img_src_crop
             cropped_target_image = img_target_crop
+
+        if self.proxydgc_config['noise_augment']:
+            # noise level: can be a small value like 0.01 ~ 0.05 depending on image scale
+            noise_std = self.proxydgc_config['noise_augment_std']
+            noise_src = torch.randn_like(cropped_source_image) * noise_std
+            noise_target = torch.randn_like(cropped_target_image) * noise_std
+            cropped_source_image = cropped_source_image + noise_src
+            cropped_target_image = cropped_target_image + noise_target
+
+            # Optional: clamp to valid range if images are [0,1]
+            cropped_source_image = cropped_source_image.clamp(0.0, 1.0)
+            cropped_target_image = cropped_target_image.clamp(0.0, 1.0)
+        else:
+            raise Exception("noise_augment not set to True in proxydgc_config")
         # already in [C, H, W] format and already a tensor
         # else:
         #     cropped_source_image = \
