@@ -10,46 +10,66 @@ import pickle
 import os
 from pathlib import Path
 
-def read_and_process_proxy(raw_path, proxy_isp_dataset, proxy, proxydgc_config):
-    # check for proxy grad requirement
-    # print(proxy.param_layer.requires_grad)
-    # exit(0)
-    if proxydgc_config["pooling"]["enable"]:
-        # print("pooling enabled")
-        # print("pooled size", proxydgc_config["pooled_size"])
-        adaptivepool2d = torch.nn.AdaptiveAvgPool2d(proxydgc_config["pooling"]["pooled_size"])
+# def read_and_process_proxy(raw_path, proxy_isp_dataset, proxy, proxydgc_config):
+#     # check for proxy grad requirement
+#     # print(proxy.param_layer.requires_grad)
+#     # exit(0)
+#     if proxydgc_config["pooling"]["enable"]:
+#         # print("pooling enabled")
+#         # print("pooled size", proxydgc_config["pooled_size"])
+#         adaptivepool2d = torch.nn.AdaptiveAvgPool2d(proxydgc_config["pooling"]["pooled_size"])
+#     bayer = rawpy.imread(raw_path).raw_image
+#     #TODO make configurable
+#     bayer = bayer[540:2460, 1040:2960] # 1920, 1920
+#     # raw_image = raw_image[1680: 1680 + 640, 1180:1180 + 640] # 640, 640
+#     # raw_image = raw_image[0:640, 0:640]
+
+#     print("process raw with proxy hype:", proxy.return_param_value())
+#     raw_image = proxy_isp_dataset.preprocess_raw(bayer)
+
+#     raw_image = raw_image.to("cuda")
+
+#     input_image = proxy(raw_image[None, :, :, :])[0]
+#     print("MEMORY after proxy forward pass:",  '{:,}'.format(torch.cuda.memory_allocated()))
+
+#     proxy_output_image = input_image.cpu().detach()
+
+#     if proxydgc_config["pooling"]["enable"]:
+#         input_image = adaptivepool2d(input_image)
+
+#     input_image = input_image.clamp(0, 1)
+
+#     # input_image = input_image.mean(dim = 0)
+#     # open("temp_log/after_reduce_image_shape", "w").write(str(input_image.shape))
+
+#     # input_image = input_image.astype('float32') / 255.0
+#     # DEBUG grad flow #1
+#     # print("grad", proxy.param_layer.grad)
+#     # input_image.sum().backward()
+#     # print("grad_after", proxy.param_layer.grad)
+#     # grad flow here
+#     # exit(0)
+#     return input_image, proxy_output_image, bayer
+
+def read_and_process_openisp(raw_path, normalized_hyp, proxy_isp_dataset, proxydgc_config):
     bayer = rawpy.imread(raw_path).raw_image
-    #TODO make configurable
     bayer = bayer[540:2460, 1040:2960] # 1920, 1920
-    # raw_image = raw_image[1680: 1680 + 640, 1180:1180 + 640] # 640, 640
-    # raw_image = raw_image[0:640, 0:640]
-
-    print("process raw with proxy hype:", proxy.return_param_value())
-    raw_image = proxy_isp_dataset.preprocess_raw(bayer)
-
-    raw_image = raw_image.to("cuda")
-
-    input_image = proxy(raw_image[None, :, :, :])[0]
-    print("MEMORY after proxy forward pass:",  '{:,}'.format(torch.cuda.memory_allocated()))
-
-    proxy_output_image = input_image.cpu().detach()
-
+    denormalized_hyp = proxy_isp_dataset.denormalize_hyp(normalized_hyp)
+    # assert type(denormalized_hyp) == np.ndarray
+    denormalized_hyp = np.array(denormalized_hyp)
+    print("process raw with hyp:", denormalized_hyp)
+    processed_bayer = proxy_isp_dataset.process_raw(bayer, denormalized_hyp, original_hyp=False)
+    # print("processed_bayer", processed_bayer.dtype)
+    # assert type(processed_bayer.dtype) == np.dtype('uint8')
+    processed_bayer = torch.tensor(processed_bayer.astype("float32") / 255.0)
+    processed_bayer = torch.permute(processed_bayer, (2, 0, 1))
     if proxydgc_config["pooling"]["enable"]:
-        input_image = adaptivepool2d(input_image)
+        adaptivepool2d = torch.nn.AdaptiveAvgPool2d(proxydgc_config["pooling"]["pooled_size"])
+        processed_bayer = adaptivepool2d(processed_bayer[None, :, :, :])[0]
+    
+    processed_bayer = processed_bayer.to("cuda")
 
-    input_image = input_image.clamp(0, 1)
-
-    # input_image = input_image.mean(dim = 0)
-    # open("temp_log/after_reduce_image_shape", "w").write(str(input_image.shape))
-
-    # input_image = input_image.astype('float32') / 255.0
-    # DEBUG grad flow #1
-    # print("grad", proxy.param_layer.grad)
-    # input_image.sum().backward()
-    # print("grad_after", proxy.param_layer.grad)
-    # grad flow here
-    # exit(0)
-    return input_image, proxy_output_image, bayer
+    return processed_bayer, bayer
 
 def collate_fn(batch):
     collated = {}
@@ -81,18 +101,17 @@ def collate_fn(batch):
 
     return collated
 
-def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, batch):
+def preprocess_sample_batch(dataset, normalized_hyp, proxy_isp_dataset, proxydgc_config, proxy, batch):
     output_dicts = []
-    proxy_output_images = []
     bayers = []
     for transform_type, source_img_name, theta in zip(batch['transform_type'],
                                                             batch['source_img_name'],
                                                             batch['theta']):
-        image, proxy_output_image, bayer = \
-           read_and_process_proxy(
+        image, bayer = \
+           read_and_process_openisp(
                source_img_name,
+               normalized_hyp,
                proxy_isp_dataset,
-               proxy,
                proxydgc_config
             )
 
@@ -107,19 +126,19 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
             transform_type, image, theta
         )
 
-        probe_output = False
-        probe_save_location = "probe_output"
-        if probe_output:
-            source_image = (output_dict['source_image'].cpu().detach().permute(1, 2, 0) * 255.0).numpy().astype(np.uint8)
-            target_image = (output_dict['target_image'].cpu().detach().permute(1, 2, 0) * 255.0).numpy().astype(np.uint8)
-            correspondence_map_pyro = [i.cpu().detach().numpy() for i in output_dict['correspondence_map_pyro']]
-            print("correspondence_map_pyro max min", correspondence_map_pyro[0].max(), correspondence_map_pyro[0].min())
-            file_path = Path(probe_save_location) / f"{os.path.basename(source_img_name)}_probe_output.pkl"
-            pickle.dump({
-                "source_image": source_image,
-                "target_image": target_image,
-                "correspondence_map_pyro": correspondence_map_pyro
-            }, open(file_path, "wb"))
+        # probe_output = False
+        # probe_save_location = "probe_output"
+        # if probe_output:
+        #     source_image = (output_dict['source_image'].cpu().detach().permute(1, 2, 0) * 255.0).numpy().astype(np.uint8)
+        #     target_image = (output_dict['target_image'].cpu().detach().permute(1, 2, 0) * 255.0).numpy().astype(np.uint8)
+        #     correspondence_map_pyro = [i.cpu().detach().numpy() for i in output_dict['correspondence_map_pyro']]
+        #     print("correspondence_map_pyro max min", correspondence_map_pyro[0].max(), correspondence_map_pyro[0].min())
+        #     file_path = Path(probe_save_location) / f"{os.path.basename(source_img_name)}_probe_output.pkl"
+        #     pickle.dump({
+        #         "source_image": source_image,
+        #         "target_image": target_image,
+        #         "correspondence_map_pyro": correspondence_map_pyro
+        #     }, open(file_path, "wb"))
         # print("correspondence_map_pyro", [i.shape for i in correspondence_map_pyro])
 
         # DEBUG grad flow #4
@@ -127,13 +146,13 @@ def preprocess_sample_batch(dataset, proxy_isp_dataset, proxydgc_config, proxy, 
         # output
 
         output_dicts.append(output_dict)
-        proxy_output_images.append(proxy_output_image)
+        # proxy_output_images.append(proxy_output_image)
         bayers.append(bayer)
 
     output = collate_fn(output_dicts)
     data = {
-        "proxy_output_images": proxy_output_images
-        , "bayers": bayers
+        # "proxy_output_images": proxy_output_images
+        "bayers": bayers
     }
     return output, data
 
@@ -144,6 +163,7 @@ def train_epoch(net,
                 proxydgc_config,
                 proxydgc_log_writer,
                 proxy,
+                es,
                 device,
                 epoch,
                 accum_loss,
@@ -169,115 +189,137 @@ def train_epoch(net,
         running_total_loss: total training loss
     """
 
-    net.train()
+    # net.train()
     running_total_loss = 0
     running_match_loss = 0
     if loss_grid_weights is None:
         loss_grid_weights = [1, 1, 1, 1, 1]
 
     pbar = tqdm(enumerate(train_loader, start = start_iter), total=len(train_loader))
-    for i, mini_batch in pbar:
-        print(mini_batch)
+    for i, mini_batch_ in pbar:
+        print(mini_batch_)
+        # input("wait")
         # create proxyopt optimizer
         proxy_gradient_to_log = None
-        if proxydgc_config["optimizer"] == "Adam":
-            optimizer = Adam([proxy.param_layer], lr=proxydgc_config["learning_rate"])
-        elif proxydgc_config["optimizer"] == "SGD":
-            optimizer = SGD([proxy.param_layer], lr=proxydgc_config["learning_rate"])
+        # if proxydgc_config["optimizer"] == "Adam":
+        #     optimizer = Adam([proxy.param_layer], lr=proxydgc_config["learning_rate"])
+        # elif proxydgc_config["optimizer"] == "SGD":
+        #     optimizer = SGD([proxy.param_layer], lr=proxydgc_config["learning_rate"])
         learning_rate = proxydgc_config["learning_rate"]
 
         n_iter = epoch * len(train_loader) + i
 
-        # preprocessing mini-batch
-        mini_batch, batch_data = preprocess_sample_batch(
-            train_loader.dataset,
-            proxy_isp_dataset,
-            proxydgc_config,
-            proxy,
-            mini_batch
-        )
+        solutions = es.ask()  # get a new solution from CMA-ES
+        losses = []
+        sol_count = 0
+        while sol_count < len(solutions):
+            print(f"Evaluating solution {sol_count+1}/{len(solutions)} for iteration {n_iter}")
+            print("solution", solutions[sol_count])
+            # preprocessing mini-batch
 
-        # optimizer.zero_grad()
+            normalized_hyp = np.array(solutions[sol_count])
 
-        # DEBUG grad flow #2
-        # print("#2 grad", proxy.param_layer.grad)
-        # mini_batch['source_image'].sum().backward()
-        # print("grad_after", proxy.param_layer.grad)
-        # exit(0)
-        # grad flow here
+            mini_batch, batch_data = preprocess_sample_batch(
+                train_loader.dataset,
+                normalized_hyp,
+                proxy_isp_dataset,
+                proxydgc_config,
+                proxy,
+                mini_batch_
+            )
 
-        # net predictions
-        estimates_grid, estimates_mask = \
-            net(mini_batch['source_image'].to(device),
-                mini_batch['target_image'].to(device))
+            # optimizer.zero_grad()
 
-        if criterion_matchability is not None and estimates_mask is None:
-            raise ValueError('Cannot use `criterion_matchability` \
-                without mask estimates')
-
-        Loss_masked_grid = 0
-        EPE_loss = 0
-
-        # grid loss components (over all layers of the feature pyramid):
-        for k in range(0, len(estimates_grid)):
-            # print("length of correspondence_map_pyro", len(mini_batch['correspondence_map_pyro'][0]))
+            # DEBUG grad flow #2
+            # print("#2 grad", proxy.param_layer.grad)
+            # mini_batch['source_image'].sum().backward()
+            # print("grad_after", proxy.param_layer.grad)
             # exit(0)
-            grid_gt = mini_batch['correspondence_map_pyro'][k].to(device)
-            bs, s_x, s_y, _ = grid_gt.shape
+            # grad flow here
 
-            flow_est = estimates_grid[k].permute(0, 2, 3, 1)
-            flow_target = grid_gt
+            # net predictions
+            with torch.no_grad():
+                estimates_grid, estimates_mask = \
+                    net(mini_batch['source_image'].to(device),
+                        mini_batch['target_image'].to(device))
 
-            # calculating mask
-            mask_x_gt = \
-                flow_target[:, :, :, 0].ge(-1) & flow_target[:, :, :, 0].le(1)
-            mask_y_gt = \
-                flow_target[:, :, :, 1].ge(-1) & flow_target[:, :, :, 1].le(1)
-            mask_gt = mask_x_gt & mask_y_gt
+            if criterion_matchability is not None and estimates_mask is None:
+                raise ValueError('Cannot use `criterion_matchability` \
+                    without mask estimates')
 
-            # number of valid pixels based on the mask
-            N_valid_pxs = mask_gt.view(1, bs * s_x * s_y).data.sum()
+            Loss_masked_grid = 0
+            EPE_loss = 0
 
-            # applying mask
-            mask_gt = torch.cat((mask_gt.unsqueeze(3),
-                                 mask_gt.unsqueeze(3)), dim=3).float()
-            flow_target_m = flow_target * mask_gt
-            flow_est_m = flow_est * mask_gt
+            # grid loss components (over all layers of the feature pyramid):
+            for k in range(0, len(estimates_grid)):
+                # print("length of correspondence_map_pyro", len(mini_batch['correspondence_map_pyro'][0]))
+                # exit(0)
+                grid_gt = mini_batch['correspondence_map_pyro'][k].to(device)
+                bs, s_x, s_y, _ = grid_gt.shape
 
-            # compute grid loss
-            Loss_masked_grid = Loss_masked_grid + \
-                loss_grid_weights[k] * criterion_grid(flow_est_m,
-                                                      flow_target_m,
-                                                      N_valid_pxs)
+                flow_est = estimates_grid[k].permute(0, 2, 3, 1)
+                flow_target = grid_gt
 
-        Loss_match = 0
-        if estimates_mask is not None:
-            match_mask_gt = \
-                mini_batch['mask_x'][-1].to(device) & \
-                mini_batch['mask_y'][-1].to(device)
-            Loss_match = \
-                criterion_matchability(estimates_mask.squeeze(1),
-                                       match_mask_gt)
+                # calculating mask
+                mask_x_gt = \
+                    flow_target[:, :, :, 0].ge(-1) & flow_target[:, :, :, 0].le(1)
+                mask_y_gt = \
+                    flow_target[:, :, :, 1].ge(-1) & flow_target[:, :, :, 1].le(1)
+                mask_gt = mask_x_gt & mask_y_gt
 
-        Loss = Loss_masked_grid + L_coeff * Loss_match
-        Loss /= proxydgc_config["grad_ac_step"]
-        proxydgc_log_writer.add_scalar("Loss/current_totoal_loss", Loss.item(), n_iter)
-        proxydgc_log_writer.add_scalar("Loss/current_masked_grid_loss", Loss_masked_grid.item(), n_iter)
-        if estimates_mask is not None:
-            proxydgc_log_writer.add_scalar("Loss/current_match_loss", Loss_match.item(), n_iter)
-        proxydgc_log_writer.add_scalar("learning_rate", learning_rate, n_iter)
-        accum_loss += Loss.item()
-        Loss.backward()
+                # number of valid pixels based on the mask
+                N_valid_pxs = mask_gt.view(1, bs * s_x * s_y).data.sum()
 
-        if (n_iter + 1) % proxydgc_config["grad_ac_step"] == 0:
-            proxy_gradient_to_log = proxy.param_layer.grad.cpu().detach().numpy()
-            optimizer.step()
-            optimizer.zero_grad()
-            categorical_ids = proxy_isp_dataset.get_categorical_ids()
-            proxy.update_param(categorical_ids=categorical_ids)
+                # applying mask
+                mask_gt = torch.cat((mask_gt.unsqueeze(3),
+                                    mask_gt.unsqueeze(3)), dim=3).float()
+                flow_target_m = flow_target * mask_gt
+                flow_est_m = flow_est * mask_gt
 
-            proxydgc_log_writer.add_scalar("Loss/accum_Loss", accum_loss, n_iter)
-            accum_loss = 0
+                # compute grid loss
+                Loss_masked_grid = Loss_masked_grid + \
+                    loss_grid_weights[k] * criterion_grid(flow_est_m,
+                                                        flow_target_m,
+                                                        N_valid_pxs)
+
+            Loss_match = 0
+            if estimates_mask is not None:
+                match_mask_gt = \
+                    mini_batch['mask_x'][-1].to(device) & \
+                    mini_batch['mask_y'][-1].to(device)
+                Loss_match = \
+                    criterion_matchability(estimates_mask.squeeze(1),
+                                        match_mask_gt)
+
+            Loss = Loss_masked_grid + L_coeff * Loss_match
+            # Loss /= proxydgc_config["grad_ac_step"]
+            # proxydgc_log_writer.add_scalar("Loss/current_total_loss", Loss.item(), n_iter)
+            # proxydgc_log_writer.add_scalar("Loss/current_masked_grid_loss", Loss_masked_grid.item(), n_iter)
+            # if estimates_mask is not None:
+                # proxydgc_log_writer.add_scalar("Loss/current_match_loss", Loss_match.item(), n_iter)
+            # proxydgc_log_writer.add_scalar("learning_rate", learning_rate, n_iter)
+            # accum_loss += Loss.item()
+            # Loss.backward()
+
+            losses.append(Loss.item())
+            sol_count += 1
+        es.tell(solutions, losses)  # report the losses back to CMA-ES
+
+        best_sol_id = np.argmin(losses)
+        best_solution = solutions[best_sol_id]
+        print(f"Best solution for iteration {n_iter}: {best_solution} with loss {losses[best_sol_id]}")
+
+        proxydgc_log_writer.add_scalar("Loss/mean_loss_over_solutions", np.mean(losses), n_iter)
+
+        # if (n_iter + 1) % proxydgc_config["grad_ac_step"] == 0:
+        #     proxy_gradient_to_log = proxy.param_layer.grad.cpu().detach().numpy()
+        #     optimizer.step()
+        #     optimizer.zero_grad()
+        #     categorical_ids = proxy_isp_dataset.get_categorical_ids()
+        #     proxy.update_param(categorical_ids=categorical_ids)
+
+        #     proxydgc_log_writer.add_scalar("Loss/accum_Loss", accum_loss, n_iter)
+        #     accum_loss = 0
 
         running_total_loss += Loss.item()
         if estimates_mask is not None:
@@ -295,7 +337,7 @@ def train_epoch(net,
         if n_iter % proxydgc_config["save_image_iter"] == 0:
             # original vs current hyp image
             bayer = batch_data["bayers"][0]
-            current_hyp = proxy.return_param_value()
+            current_hyp = best_solution
             current_hyp = proxy_isp_dataset.denormalize_hyp(current_hyp)
             current_hyp_image = proxy_isp_dataset.process_raw(bayer, current_hyp, original_hyp = False)
             current_hyp_image = torch.tensor(current_hyp_image.astype("float32") / 255.0)
@@ -305,37 +347,41 @@ def train_epoch(net,
             initial_hyp_image = torch.tensor(initial_hyp_image.astype("float32") / 255.0)
             initial_hyp_image = torch.permute(initial_hyp_image, (2, 0, 1))
             stitched_image = torch.cat((initial_hyp_image, current_hyp_image), dim=2)
+            stitched_image = F.interpolate(stitched_image.unsqueeze(0), size=(256, 256 * 2), mode='bilinear', align_corners=False)[0]
             proxydgc_log_writer.add_image("image (initial, current)", stitched_image, n_iter)
 
             # source, target
             source_image = mini_batch['source_image'][0]
             target_image = mini_batch['target_image'][0]
             stitched_image = torch.cat((source_image, target_image), dim=2)
+
+            # downsample for better visualization in tensorboard
+            # stitched_image = F.interpolate(stitched_image.unsqueeze(0), size=(256, 256), mode='bilinear', align_corners=False)[0]
             proxydgc_log_writer.add_image("image (source, target)", stitched_image, n_iter)
         if n_iter % proxydgc_config["log_param_iter"] == 0:
             idx = 0
-            denormalized_hypes = proxy_isp_dataset.denormalize_hyp(proxy.return_param_value())
+            denormalized_hypes = proxy_isp_dataset.denormalize_hyp(best_solution)
             for param in proxy_isp_dataset.hyp_setting["parameters"]:
                 if param["type"] == "categorical":
                     for bin in range(param["values"].__len__()):
                         bin_name = param["values"][bin]
                         proxydgc_log_writer.add_scalar("ISP_hyperparameters/" + param["name"]+f"|{bin_name}", denormalized_hypes[idx], n_iter)
-                        proxydgc_log_writer.add_scalar("ISP_hyperparameters_raw_from_proxy/" + param["name"]+f"|{bin_name}", proxy.return_param_value()[idx], n_iter)
+                        # proxydgc_log_writer.add_scalar("ISP_hyperparameters_raw_from_proxy/" + param["name"]+f"|{bin_name}", proxy.return_param_value()[idx], n_iter)
                         if proxy_gradient_to_log is not None:
                             proxydgc_log_writer.add_scalar("grad/" + param["name"]+f"|{bin_name}", proxy_gradient_to_log[idx], n_iter)
                         idx += 1
                 else:
                     proxydgc_log_writer.add_scalar("ISP_hyperparameters/" + param["name"], denormalized_hypes[idx], n_iter)
-                    proxydgc_log_writer.add_scalar("ISP_hyperparameters_raw_from_proxy/" + param["name"], proxy.return_param_value()[idx], n_iter)
-                    if proxy_gradient_to_log is not None:
-                        proxydgc_log_writer.add_scalar("grad/" + param["name"], proxy_gradient_to_log[idx], n_iter)
+                    # proxydgc_log_writer.add_scalar("ISP_hyperparameters_raw_from_proxy/" + param["name"], proxy.return_param_value()[idx], n_iter)
+                    # if proxy_gradient_to_log is not None:
+                    #     proxydgc_log_writer.add_scalar("grad/" + param["name"], proxy_gradient_to_log[idx], n_iter)
                     idx += 1
             assert idx == len(denormalized_hypes)
         if n_iter % proxydgc_config["save_hype_iter"] == 0:
             print("Saving proxyopt checkpoint at iteration", n_iter)
-            proxyopt_checkpoint_path = Path("proxydgc_logs") / proxydgc_config["experiment_name"] / "checkpoints"
+            proxyopt_checkpoint_path = Path("proxydgc_logs") / proxydgc_config["experiment_name"] / "cma_checkpoints"
             os.makedirs(proxyopt_checkpoint_path, exist_ok = True)
-            params = proxy.return_param_value()
+            params = best_solution
             lr_scheduler_state_dict = None
             lr_scheduler_class = None
             # if lr_scheduler is not None:
@@ -346,9 +392,9 @@ def train_epoch(net,
                 obj = {
                     "proxy_hype":params,
                     "lr_scheduler_state_dict": lr_scheduler_state_dict,
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "lr_scheduler_class": lr_scheduler_class,
-                    "optimizer_class": optimizer.state_dict(),
+                    # "optimizer_state_dict": optimizer.state_dict(),
+                    # "lr_scheduler_class": lr_scheduler_class,
+                    "optimizer_class": "CMAEvolutionStrategy",
                     "train_proxy_from_it": n_iter,
                 }
                 pickle.dump(obj, f)

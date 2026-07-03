@@ -35,28 +35,36 @@ evals = [
     # HpatchesV4.1 ll
     # {
     #     "path": "proxydgc_eval/eval_ll_v16.2-chroma-ISPDefaultInitialHype_original_HpatchesV4.1",
-    #     "label": "Original Low-light"
+    #     "label": "Orig-ISP Low-light"
     # },
     # {
     #     "path": "/home/boat/proxyISP/DGC-Net/proxydgc_eval/eval_ll_v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_lowlight_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_adjust_defaultcolorhuesat_denoise_45000_HpatchesV4.1",
-    #     "label": "Visual-Optimized Low-light"
+    #     "label": "VO-ISP Low-light"
+    # },
+    # {
+    #     "path": "proxydgc_eval/eval_ll_CMAES_lowlight_maxstd0.01_CSA10.0_noiseaug0.6_2300_HpatchesV4.1",
+    #     "label": "FO-ISP-CMA Low-light"
     # },
     # {
     #     "path": "proxydgc_eval/eval_ll_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32_123000_HpatchesV4.1",
-    #     "label": "Feature-Optimized Low-light"
+    #     "label": "FO-ISP-Proxy Low-light"
     # },
 
     {
         "path": "proxydgc_eval/eval_sl_v16.2-chroma-ISPDefaultInitialHype_original_HpatchesV4.1",
-        "label": "Original Well-lit"
+        "label": "Orig-ISP Well-lit"
     },
     {
         "path": "/home/boat/proxyISP/DGC-Net/proxydgc_eval/eval_sl_v16.2-chroma-HumanTunedInitialHype_replicate-s21fe_sunlit_lr0.0005_schedulerPlateauTo0.00001_bs1_ga8_adjust_defaultcolorhuesat_120000_HpatchesV4.1",
-        "label": "Visual-Optimized Well-lit"
+        "label": "VO-ISP Well-lit"
+    },
+        {
+        "path": "proxydgc_eval/eval_sl_CMAES_sunlit_maxstd0.01_CSA10.0_noiseaug0.6_2040_HpatchesV4.1",
+        "label": "FO-ISP-CMA Well-lit"
     },
     {
         "path": "proxydgc_eval/eval_sl_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_sunlit_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32_105000_HpatchesV4.1",
-        "label": "Feature-Optimized Well-lit"
+        "label": "FO-ISP-Proxy Well-lit"
     },
     
     
@@ -108,7 +116,7 @@ for i in range(5):
     title = f"Viewpoint {i+1}"
     ax.set_title(title, fontname="Times New Roman")
     ax.set_ylabel('PCK', fontname="Times New Roman")
-    ax.set_xlabel('threshold', fontname="Times New Roman")
+    # ax.set_xlabel('threshold', fontname="Times New Roman")
     ax.grid(True)
     ax.legend(loc='lower right')
 

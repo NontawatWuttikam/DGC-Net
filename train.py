@@ -7,6 +7,7 @@ from os import path as osp
 from termcolor import colored
 import pickle
 import yaml
+import cma
 from pathlib import Path
 from model.net import DGCNet
 import sys
@@ -45,7 +46,7 @@ def load_proxy_model_and_dataset(proxydgc_config):
     loaded_param_layer = None
     proxyopt_checkpoint_object = None
 
-    checkpoint_dir = stage2_output_dir / "checkpoints"
+    checkpoint_dir = stage2_output_dir / "cma_checkpoints"
     if os.path.exists(checkpoint_dir):
         checkpoints = list(os.scandir(checkpoint_dir))
         checkpoints = sorted(checkpoints, key = lambda x: int(x.name.split("_")[-1].split(".")[0]))
@@ -197,6 +198,25 @@ if __name__ == "__main__":
     assert proxydgc_config != None
     proxy, proxy_isp_dataset, proxyopt_checkpoint = load_proxy_model_and_dataset(proxydgc_config)
 
+    # setup cma-es
+    initial_solution = None
+    if proxyopt_checkpoint is not None:
+        print("loading cma-es state from checkpoint")
+        initial_solution = proxyopt_checkpoint["proxy_hype"]
+    else:
+        print("no checkpoint found, initializing cma-es with original hyperparameters")
+        initial_solution = proxy_isp_dataset.get_original_hyp(True, False, add_eps = False)
+    print("cma-es initial solution", initial_solution)
+    print("initializng cma-es")
+    maxstd = proxydgc_config["cmaes"]["maxstd"]
+    CSA_dampfac = proxydgc_config["cmaes"]["CSA_dampfac"]
+
+    opts = {"CSA_dampfac": CSA_dampfac, 'maxstd': maxstd}
+
+    if proxydgc_config["cmaes"]["bounds"] == "zero_to_one":
+        opts["bounds"] = [0, 1]
+    es = cma.CMAEvolutionStrategy(initial_solution, 0.5, opts)
+
     proxydgc_log_path = Path("proxydgc_logs") / proxydgc_config["experiment_name"]
 
     if not os.path.exists(proxydgc_log_path):
@@ -295,6 +315,7 @@ if __name__ == "__main__":
     start_iter = 0
     if proxyopt_checkpoint is not None:
         it = proxyopt_checkpoint["train_proxy_from_it"]
+        print(f"resuming training from it {it}")
         start_ep = it // (len(train_dataset) // args.batch_size)
         start_iter = it % (len(train_dataset) // args.batch_size)
     for epoch in range(start_ep, proxydgc_config["epochs"]):
@@ -306,6 +327,7 @@ if __name__ == "__main__":
                                  proxydgc_config,
                                  proxydgc_log_writer,
                                  proxy,
+                                 es,
                                  device,
                                  epoch,
                                  accum_loss,
