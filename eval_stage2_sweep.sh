@@ -1,18 +1,18 @@
 #!/bin/bash
-start_number=13000
-end_number=145800
-step_size=1000
+start_number=0
+end_number=7500
+step_size=100
 
 echo "Running evaluation sweep from checkpoint $start_number to $end_number with step size $step_size"
 
 # proxyopt config path
 # proxydgc_eval_dir="proxydgc_eval_CMAES_train_lowlight_maxstd0.1_csadampfac1.5"
-proxydgc_eval_dir="proxydgc_eval_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32"
+proxydgc_eval_dir="proxydgc_eval_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.005_gradac4"
 proxyoptConfig="/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml"
 pretrained="model/pretrained_models/dgc/checkpoint.pth"
 # Base path for checkpoints
 # stage2CheckpointBase="/home/boat/proxyISP/DGC-Net/proxydgc_logs/CMAES_lowlight_maxstd0.1_CSA1.5_noiseaug0.6/cma_checkpoints"
-stage2CheckpointBase="/home/boat/proxyISP/DGC-Net/proxydgc_logs/FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.0005_gradac32/checkpoints"
+stage2CheckpointBase="/home/boat/proxyISP/DGC-Net/proxydgc_logs/FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.005_gradac4/checkpoints"
 # stage2Checkpoint="original"
 extraSuffix="_HpatchesV4.1"
 gpu_devices="0"

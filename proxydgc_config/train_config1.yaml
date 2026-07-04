@@ -1,11 +1,11 @@
 # experiment_name: 'DENOISEAUG0.6_FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.005_gradac32'
-experiment_name: "CMAES_sunlit_maxstd0.1_CSA1.5_noiseaug0.6"
+experiment_name: "FIXZEROGRADBUG_CFANORMALIZE_train_v16.2-chroma-HumanTunedInitialHype_lowlight_pooled480x640_allHomoRepeatedRaw_standardize_lr0.005_gradac4"
 # config_path: '/home/boat/proxyISP/ProxyOpt/train_configs/v16.1.yaml'
 config_path: '/home/boat/proxyISP/ProxyOpt/train_configs/v16.2-chroma-HumanTunedInitialHype.yaml'
 # target_images: /mnt/ssd2tb/boat/thesis/s21fe_dataset/raw_edgeContrastIndex_top100
 # target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/well-lit'
-# target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/low-light'
-target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/sunlit'
+target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/low-light'
+# target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/sunlit'
 # target_images: '/mnt/ssd2tb/boat/thesis/s21fe_hpatches_v4'
 # target_images: '/mnt/ssd2tb/boat/thesis/s21fe_dataset/raw/low-light'
 pretrained: '/home/boat/proxyISP/DGC-Net/model/pretrained_models/dgc/checkpoint.pth'
@@ -18,7 +18,7 @@ noise_augment: True
 noise_augment_std: 0.6
 epochs: 10000000
 batch_size: 1
-grad_ac_step: 32
+grad_ac_step: 4
 standardize: True
 optimizer: 'Adam'
 homoafftps_config:
@@ -35,7 +35,7 @@ pooling:
 learning_rate: 0.005
 # learning_rate: 0.0005 # 0.0005 x gradac=8
 # learning_rate: 0.01
-save_image_iter: 1
+save_image_iter: 50
 log_param_iter: 1
 save_hype_iter: 1
 lr_scheduler_iter: 1
