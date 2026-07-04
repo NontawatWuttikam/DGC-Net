@@ -311,6 +311,9 @@ def train_epoch(net,
             source_image = mini_batch['source_image'][0]
             target_image = mini_batch['target_image'][0]
             stitched_image = torch.cat((source_image, target_image), dim=2)
+
+            # downsample to /8 for logging
+            stitched_image = F.interpolate(stitched_image.unsqueeze(0), size=(stitched_image.shape[1]//8, stitched_image.shape[2]//8), mode='bilinear', align_corners=False).squeeze(0)
             proxydgc_log_writer.add_image("image (source, target)", stitched_image, n_iter)
         if n_iter % proxydgc_config["log_param_iter"] == 0:
             idx = 0
