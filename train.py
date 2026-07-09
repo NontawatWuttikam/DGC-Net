@@ -208,13 +208,24 @@ if __name__ == "__main__":
         initial_solution = proxy_isp_dataset.get_original_hyp(True, False, add_eps = False)
     print("cma-es initial solution", initial_solution)
     print("initializng cma-es")
-    maxstd = proxydgc_config["cmaes"]["maxstd"]
-    CSA_dampfac = proxydgc_config["cmaes"]["CSA_dampfac"]
+    # maxstd = proxydgc_config["cmaes"]["maxstd"]
+    # CSA_dampfac = proxydgc_config["cmaes"]["CSA_dampfac"]
 
-    opts = {"CSA_dampfac": CSA_dampfac, 'maxstd': maxstd}
+    opts = {}
+    if "maxstd" in proxydgc_config["cmaes"]:
+        maxstd = proxydgc_config["cmaes"]["maxstd"]
+        opts["maxstd"] = maxstd
+    if  "CSA_dampfac" in proxydgc_config["cmaes"]:
+        CSA_dampfac = proxydgc_config["cmaes"]["CSA_dampfac"]
+        opts["CSA_dampfac"] = CSA_dampfac
+    if "bounds" in proxydgc_config["cmaes"]:
+        bounds = proxydgc_config["cmaes"]["bounds"]
+        if bounds == "zero_to_one":
+            bounds = [0, 1]
+            opts["bounds"] = bounds
 
-    if proxydgc_config["cmaes"]["bounds"] == "zero_to_one":
-        opts["bounds"] = [0, 1]
+    print("opts", opts)
+
     es = cma.CMAEvolutionStrategy(initial_solution, 0.5, opts)
 
     proxydgc_log_path = Path("proxydgc_logs") / proxydgc_config["experiment_name"]
